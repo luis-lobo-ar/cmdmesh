@@ -1,0 +1,25 @@
+[package]
+name = "cmdmesh"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Explicit infrastructure inventory and reusable operations recipes"
+repository = "https://github.com/luis-lobo-ar/cmdmesh"
+
+[dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+clap = { version = "4.5", features = ["derive"] }
+hex = "0.4"
+libc = "0.2"
+rust-mcp-sdk = "=0.8.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tokio = { version = "1.39", features = ["macros", "rt-multi-thread", "time"] }
+tempfile = "3.27"
+
+
+[[bin]]
+name = "cmdmesh"
+path = "src/main.rs"

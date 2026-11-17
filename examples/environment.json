@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "providers": {
+    "proxmox": {
+      "executable": "../cmdmesh-proxmox/bin/cmdmesh-proxmox",
+      "config": {
+        "endpoint": "https://hypervisor.example.invalid:8006",
+        "ca_file": "./ca/lab.pem",
+        "token_id_env": "PROXMOX_TOKEN_ID",
+        "token_secret_env": "PROXMOX_TOKEN_SECRET",
+        "timeout_seconds": 10
+      },
+      "env_allowlist": ["PROXMOX_TOKEN_ID", "PROXMOX_TOKEN_SECRET"]
+    }
+  },
+  "packages": {"proxmox": "../cmdmesh-proxmox"},
+  "targets": {
+    "lab": {
+      "inventory": "./ansible/inventory.ini",
+      "limit": "node-a",
+      "vars_file": "./ansible/vars.yml",
+      "lifecycle_owner": "terraform"
+    }
+  },
+  "execution": {
+    "allow_execution": false,
+    "allow_mutations": false,
+    "timeout_seconds": 300,
+    "env_allowlist": ["SSH_AUTH_SOCK"]
+  }
+}

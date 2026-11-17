@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture-based evaluation prompts. No LLM evaluation has run. The executable
+     stdio handshake/tool-call tests are protocol evidence, not an LLM score. -->
+<evaluation>
+  <qa_pair><question>Using recipe or protocol discovery, does CmdMesh expose an MCP tool that executes recipes?</question><answer>No. Its five tools are cmdmesh_inventory_pull, cmdmesh_drift_detect, cmdmesh_recipe_list, cmdmesh_recipe_inspect, and cmdmesh_recipe_plan.</answer></qa_pair>
+  <qa_pair><question>Compare examples/desired.json with tests/fixtures/inventory.json. Is the inventory complete?</question><answer>true</answer></qa_pair>
+  <qa_pair><question>Compare examples/desired.json with tests/fixtures/inventory.json. Is the drift result clean?</question><answer>true</answer></qa_pair>
+  <qa_pair><question>Which synthetic LXC identity appears in tests/fixtures/inventory.json?</question><answer>node-a/101</answer></qa_pair>
+  <qa_pair><question>Which resource kind identifies the synthetic container in tests/fixtures/inventory.json?</question><answer>proxmox.lxc</answer></qa_pair>
+  <qa_pair><question>Which name is expected for the container in examples/desired.json?</question><answer>example-app</answer></qa_pair>
+  <qa_pair><question>How much memory in bytes is expected for the container in examples/desired.json?</question><answer>536870912</answer></qa_pair>
+  <qa_pair><question>Which status is expected for node-a in examples/desired.json?</question><answer>online</answer></qa_pair>
+  <qa_pair><question>Which provider protocol schema version do the synthetic inventory fixtures use?</question><answer>1</answer></qa_pair>
+  <qa_pair><question>Can cmdmesh_recipe_plan alone start Ansible or change infrastructure?</question><answer>No. It produces a static plan without executing a provider or Ansible.</answer></qa_pair>
+</evaluation>
