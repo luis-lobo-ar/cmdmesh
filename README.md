@@ -16,7 +16,8 @@ execution remains a direct Terraform workflow, outside CmdMesh v0.1.
 
 ## Build and try offline drift
 
-CmdMesh supports Unix systems with a Rust toolchain. Python 3 is needed for the
+CmdMesh supports Unix systems. The checked-in toolchain pins Rust 1.92.0 for
+repeatable builds and formatting. Python 3 is needed for the
 synthetic executable tests and the Proxmox integration.
 
 ```sh
