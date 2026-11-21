@@ -73,6 +73,9 @@ enum Recipe {
         plan: PathBuf,
         #[arg(long)]
         approve_digest: String,
+        /// Save bounded raw tool output in a new owner-only directory.
+        #[arg(long)]
+        log_dir: Option<PathBuf>,
     },
 }
 
@@ -118,9 +121,15 @@ async fn run(cli: Cli) -> Result<()> {
                 write_private_json(&out, &plan)?;
                 print_json(&serde_json::json!({"digest":plan.digest,"out":out,"warning":plan.warning}))?;
             }
-            Recipe::Execute { plan, approve_digest } => {
-                print_json(&recipe::execute(&read_json(&plan)?, &approve_digest)?)?
-            }
+            Recipe::Execute {
+                plan,
+                approve_digest,
+                log_dir,
+            } => print_json(&recipe::execute_with_logs(
+                &read_json(&plan)?,
+                &approve_digest,
+                log_dir.as_deref(),
+            )?)?,
         },
         Command::Mcp => cmdmesh::mcp::serve(cli.config).await?,
     }

@@ -14,6 +14,7 @@ The static plan includes SHA-256 bindings for:
   `host_vars` directories for an inventory file.
 - The explicit variables file, if configured.
 - The resolved Ansible executable when installed.
+- The runner-owned Ansible configuration text.
 
 Tree bindings exclude `.git`, `.generated`, `.terraform`, `.venv`, and `.ansible`.
 Terraform lockfiles remain bound. Do not place
@@ -53,15 +54,48 @@ Terraform owns guest lifecycle fields unless a target explicitly selects
 Ansible ownership. The `lifecycle-owner:ansible` recipe requirement enforces that
 choice for guest resource and storage changes.
 
+## Private execution output
+
+The runner captures at most one MiB per child output stream. Without `--log-dir`,
+it discards raw output and returns safe status only. Provider calls retain that
+behavior and have no raw-log option. MCP still exposes no execution operation.
+
+`recipe execute --log-dir <new-directory>` explicitly retains raw tool output.
+Its parent must exist. The new directory is mode 0700. Files are mode 0600:
+
+- `step-0001.stdout` and `step-0001.stderr` contain the first step's captured streams.
+  Subsequent steps use increasing numbers.
+- `execution.json` contains the plan digest, completed-step count, status, and
+  log-directory path. A failed step is not counted as completed. Later steps
+  do not start after a failure.
+
+Existing destination paths, including symlinks, are refused. A log directory
+cannot be inside any bound input tree. Log files are not plan inputs. The option
+does not enable diffs or change the approved operation, execution permission,
+mutation permission, target lock, or stale-plan checks.
+
+Raw logs can contain secrets and are not redacted. Opting in authorizes local
+retention, not publication. Keep them under your private configuration directory.
+Do not paste raw inventory, plans, or output into a public issue. The CLI never
+copies raw tool streams into its normal stdout or errors, even when logging is on.
+
+Captured prefixes remain after ordinary nonzero exits, timeouts, cancellation,
+and output-limit failures. Each stream file is bounded to one MiB. A timeout or
+limit failure may leave only a partial prefix. Logs are not a durable audit store:
+disk failure or a killed controller can leave incomplete files or no final report.
+Deleting local logs does not undo remote operations.
+
 ## Failure and interruption
 
-The runner captures at most one MiB per child output stream. It does not return
-raw output on failure or write raw logs. Results contain safe status only.
-This protects secrets but limits diagnosis. Inspect the trusted tool locally
-under your own logging policy when more detail is needed. Never paste raw
-inventory, plans, or tool output into a public issue.
+`status: failed` means the local execution did not complete successfully. It does
+not prove that remote work stopped or rolled back. A missing report also leaves
+the outcome unknown. Inspect the actual target before retrying.
 
 Local scratch directories are owner-only and are removed after execution.
+The managed SSH defaults do not use multiplexing sockets, so long private
+directory paths do not require a system-temp socket fallback. This costs an
+additional SSH handshake for each operation. Explicit trusted inventory overrides
+can change those defaults and remain the operator's responsibility.
 Timeout and SIGINT or SIGTERM cancellation terminate the owned local process
 group, including SSH children that remain in that group. Code that deliberately
 creates a separate session can escape the group. CmdMesh does not contain such

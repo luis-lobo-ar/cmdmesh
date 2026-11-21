@@ -6,7 +6,7 @@ use std::{
     io::{self, Read, Write},
     os::fd::AsRawFd,
     os::unix::{
-        fs::{DirBuilderExt, PermissionsExt},
+        fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
         process::CommandExt,
     },
     path::Path,
@@ -55,6 +55,11 @@ impl Drop for ChildGroup {
     }
 }
 
+pub(crate) struct StreamLogs {
+    pub stdout: fs::File,
+    pub stderr: fs::File,
+}
+
 pub(crate) struct RunSpec<'a> {
     pub program: &'a Path,
     pub args: &'a [OsString],
@@ -64,9 +69,11 @@ pub(crate) struct RunSpec<'a> {
     pub cwd: &'a Path,
     pub timeout: Duration,
     pub private_root: &'a Path,
+    pub ansible_config: Option<&'a str>,
+    pub logs: Option<StreamLogs>,
 }
 
-pub(crate) fn run(spec: RunSpec<'_>) -> Result<Vec<u8>> {
+pub(crate) fn run(mut spec: RunSpec<'_>) -> Result<Vec<u8>> {
     if cancelled() {
         bail!("operation cancelled before execution");
     }
@@ -112,6 +119,17 @@ pub(crate) fn run(spec: RunSpec<'_>) -> Result<Vec<u8>> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(content) = spec.ansible_config {
+        let config = scratch.path().join("ansible.cfg");
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&config)
+            .context("cannot create managed Ansible configuration")?
+            .write_all(content.as_bytes())?;
+        command.env("ANSIBLE_CONFIG", config);
+    }
     command.process_group(0);
     let child = command.spawn().context("cannot launch configured executable")?;
     let mut group = ChildGroup {
@@ -138,8 +156,16 @@ pub(crate) fn run(spec: RunSpec<'_>) -> Result<Vec<u8>> {
             group.terminate();
             bail!("operation timed out; remote outcome may be unknown");
         }
-        drain(&mut stdout, &mut output)?;
-        drain(&mut stderr, &mut diagnostics)?;
+        drain(
+            &mut stdout,
+            &mut output,
+            spec.logs.as_mut().map(|logs| &mut logs.stdout),
+        )?;
+        drain(
+            &mut stderr,
+            &mut diagnostics,
+            spec.logs.as_mut().map(|logs| &mut logs.stderr),
+        )?;
         if let Some(stream) = &mut stdin {
             if input_offset < payload.len() {
                 match stream.write(&payload[input_offset..]) {
@@ -161,8 +187,16 @@ pub(crate) fn run(spec: RunSpec<'_>) -> Result<Vec<u8>> {
     // A process that leaves the owned group may retain inherited pipes. All
     // reads stay nonblocking; completion never waits for that process or EOF.
     group.terminate();
-    drain(&mut stdout, &mut output)?;
-    drain(&mut stderr, &mut diagnostics)?;
+    drain(
+        &mut stdout,
+        &mut output,
+        spec.logs.as_mut().map(|logs| &mut logs.stdout),
+    )?;
+    drain(
+        &mut stderr,
+        &mut diagnostics,
+        spec.logs.as_mut().map(|logs| &mut logs.stderr),
+    )?;
     if !status.success() {
         bail!(
             "child operation failed (exit {:?}); raw output withheld",
@@ -181,7 +215,7 @@ fn nonblocking(stream: &impl AsRawFd) -> Result<()> {
     Ok(())
 }
 
-fn drain(stream: &mut impl Read, output: &mut Vec<u8>) -> Result<()> {
+fn drain(stream: &mut impl Read, output: &mut Vec<u8>, mut log: Option<&mut fs::File>) -> Result<()> {
     let mut buffer = [0u8; 8192];
     // A busy writer cannot prevent the caller from checking its deadline.
     for _ in 0..=(MAX_OUTPUT / buffer.len()) {
@@ -192,10 +226,15 @@ fn drain(stream: &mut impl Read, output: &mut Vec<u8>) -> Result<()> {
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => bail!("cannot read child output; raw output withheld"),
         };
-        if output.len().saturating_add(count) > MAX_OUTPUT {
+        let accepted = count.min(MAX_OUTPUT - output.len());
+        output.extend_from_slice(&buffer[..accepted]);
+        if let Some(file) = log.as_mut() {
+            file.write_all(&buffer[..accepted])
+                .context("cannot write private child log")?;
+        }
+        if accepted < count {
             bail!("child output exceeded limit; raw output withheld");
         }
-        output.extend_from_slice(&buffer[..count]);
     }
     Ok(())
 }

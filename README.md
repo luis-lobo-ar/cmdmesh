@@ -77,6 +77,18 @@ cmdmesh recipe execute --plan ./private/baseline-plan.json \
   --approve-digest <digest-returned-by-plan>
 ```
 
+To retain Ansible task output and the recap, explicitly add
+`--log-dir ./private/baseline-run-01`. The directory must not exist. CmdMesh
+creates it owner-only and saves bounded raw streams and a safe execution report.
+Raw logs may contain credentials. They are not redacted or printed on the terminal.
+Without this option, raw output is discarded. See
+[execution output](docs/execution.md#private-execution-output).
+
+Version 0.1.1 creates a valid private `ansible.cfg` instead of pointing Ansible
+at `/dev/null`. The configuration content is bound into each plan. Recreate plans
+made by 0.1.0 before executing with 0.1.1. Execution and mutation permissions
+remain denied by default.
+
 Use a plan output directory outside recipe and package source trees. Changes to
 bound configuration, inventory, variables, dependencies, or executables invalidate
 the plan. Check mode can still have effects when trusted Ansible tasks, plugins,
@@ -114,6 +126,10 @@ cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
+
+Set `CMDMESH_TEST_ANSIBLE` to a trusted Ansible executable to also run the
+actual localhost executor regression test. CI installs Core 2.20.4 and requires
+that test. No live inventory is used.
 
 Tests use synthetic files and local executable doubles. They cover a real SDK
 MCP handshake, CLI commands, private output permissions, stale plans, denied
