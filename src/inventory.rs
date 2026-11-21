@@ -115,6 +115,8 @@ pub fn pull(environment: &Environment, provider_id: &str) -> Result<Snapshot> {
         cwd: environment.path.parent().unwrap(),
         timeout: Duration::from_secs(120),
         private_root: environment.path.parent().unwrap(),
+        ansible_config: None,
+        logs: None,
     })?;
     let snapshot: Snapshot = serde_json::from_slice(&output)
         .map_err(|_| anyhow::anyhow!("provider returned invalid inventory JSON"))?;

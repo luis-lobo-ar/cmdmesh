@@ -1,6 +1,6 @@
 use crate::{
     config::{Environment, LifecycleOwner},
-    digest, file_digest, identifier, process, read_json, version,
+    digest, file_digest, identifier, process, read_json, version, write_private_json,
 };
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use std::{
     ffi::OsString,
     fs,
     os::fd::AsRawFd,
-    os::unix::fs::OpenOptionsExt,
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Component, Path, PathBuf},
     time::Duration,
 };
@@ -78,6 +78,7 @@ pub struct Plan {
     pub inputs: Vec<BoundInput>,
     pub commands: Vec<PlannedCommand>,
     pub collection_paths: Vec<PathBuf>,
+    pub ansible_config: String,
     pub warning: String,
 }
 #[derive(Debug, Serialize)]
@@ -86,6 +87,8 @@ pub struct ExecutionReport {
     pub plan_digest: String,
     pub completed_steps: usize,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_dir: Option<PathBuf>,
 }
 
 pub fn inspect(manifest: &Path) -> Result<Recipe> {
@@ -239,7 +242,7 @@ pub fn plan(
             cwd: root.clone(),
         });
     }
-    let mut plan = Plan { schema_version:1, digest:String::new(), environment:environment.path.clone(), manifest, target:target_name.into(), operation, inputs, commands, collection_paths,
+    let mut plan = Plan { schema_version:1, digest:String::new(), environment:environment.path.clone(), manifest, target:target_name.into(), operation, inputs, commands, collection_paths, ansible_config:"[defaults]\n".into(),
         warning:"Static execution plan, not an Ansible change preview. Trusted Ansible code may have effects even in check mode. Approval is acknowledgement, not a sandbox. Remote outcome may be unknown on interruption.".into() };
     plan.digest = plan_digest(&plan)?;
     Ok(plan)
@@ -259,6 +262,10 @@ pub fn verify_plan(plan: &Plan) -> Result<()> {
 }
 
 pub fn execute(plan: &Plan, approval: &str) -> Result<ExecutionReport> {
+    execute_with_logs(plan, approval, None)
+}
+
+pub fn execute_with_logs(plan: &Plan, approval: &str, log_dir: Option<&Path>) -> Result<ExecutionReport> {
     if approval != plan.digest {
         bail!("approval digest does not match plan");
     }
@@ -290,7 +297,6 @@ pub fn execute(plan: &Plan, approval: &str) -> Result<ExecutionReport> {
     }
     verify_plan(plan)?;
     let mut extra_env = BTreeMap::from([
-        ("ANSIBLE_CONFIG".into(), "/dev/null".into()),
         ("ANSIBLE_NOCOLOR".into(), "1".into()),
         ("ANSIBLE_DIFF_ALWAYS".into(), "False".into()),
         ("ANSIBLE_HOST_KEY_CHECKING".into(), "True".into()),
@@ -302,25 +308,82 @@ pub fn execute(plan: &Plan, approval: &str) -> Result<ExecutionReport> {
             paths.to_string_lossy().into_owned(),
         );
     }
-    for command in &plan.commands {
-        let args: Vec<OsString> = command.argv.iter().map(OsString::from).collect();
-        process::run(process::RunSpec {
-            program: &command.executable,
-            args: &args,
-            input: None,
-            allowlist: &environment.execution.env_allowlist,
-            extra_env: &extra_env,
-            cwd: &command.cwd,
-            timeout: Duration::from_secs(environment.execution.timeout_seconds),
-            private_root: environment.path.parent().unwrap(),
-        })?;
-    }
-    Ok(ExecutionReport {
+    let log_dir = log_dir.map(|path| create_log_dir(path, plan)).transpose()?;
+    let mut report = ExecutionReport {
         schema_version: 1,
         plan_digest: plan.digest.clone(),
-        completed_steps: plan.commands.len(),
-        status: "succeeded".into(),
-    })
+        completed_steps: 0,
+        status: "failed".into(),
+        log_dir,
+    };
+    let result = (|| -> Result<()> {
+        for (index, command) in plan.commands.iter().enumerate() {
+            let logs = report
+                .log_dir
+                .as_ref()
+                .map(|dir| -> Result<_> {
+                    Ok(process::StreamLogs {
+                        stdout: create_log_file(&dir.join(format!("step-{:04}.stdout", index + 1)))?,
+                        stderr: create_log_file(&dir.join(format!("step-{:04}.stderr", index + 1)))?,
+                    })
+                })
+                .transpose()?;
+            let args: Vec<OsString> = command.argv.iter().map(OsString::from).collect();
+            process::run(process::RunSpec {
+                program: &command.executable,
+                args: &args,
+                input: None,
+                allowlist: &environment.execution.env_allowlist,
+                extra_env: &extra_env,
+                cwd: &command.cwd,
+                timeout: Duration::from_secs(environment.execution.timeout_seconds),
+                private_root: environment.path.parent().unwrap(),
+                ansible_config: Some(&plan.ansible_config),
+                logs,
+            })?;
+            report.completed_steps += 1;
+        }
+        Ok(())
+    })();
+    if result.is_ok() {
+        report.status = "succeeded".into();
+    }
+    if let Some(directory) = &report.log_dir {
+        write_private_json(&directory.join("execution.json"), &report)?;
+    }
+    result?;
+    Ok(report)
+}
+
+fn create_log_dir(path: &Path, plan: &Plan) -> Result<PathBuf> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let directory = parent
+        .canonicalize()?
+        .join(path.file_name().context("log directory needs a new name")?);
+    if plan
+        .inputs
+        .iter()
+        .any(|input| input.directory && directory.starts_with(&input.path))
+    {
+        bail!("log directory must be outside bound input trees");
+    }
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&directory)
+        .context("cannot create private log directory; existing paths are never overwritten")?;
+    Ok(directory)
+}
+
+fn create_log_file(path: &Path) -> Result<fs::File> {
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .context("cannot create private step log")
 }
 
 fn resolve_ansible(environment: &Environment) -> Result<PathBuf> {

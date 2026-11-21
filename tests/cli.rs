@@ -184,7 +184,7 @@ fn cli_plan(environment: &Path, manifest: &Path, operation: &str, plan: &Path) -
 fn static_plan_does_not_execute_and_approved_check_runs_only_bound_arguments() {
     let dir = temporary();
     let marker = dir.path().join("called.json");
-    let script = format!("#!/usr/bin/python3\nimport json,sys,os,stat\nassert os.environ['ANSIBLE_CONFIG']=='/dev/null'\nassert 'UNLISTED_PRIVATE_VALUE' not in os.environ\nassert stat.S_IMODE(os.stat(os.environ['TMPDIR']).st_mode)==0o700\nassert os.environ['ANSIBLE_LOCAL_TEMP'].startswith(os.environ['TMPDIR'])\njson.dump(sys.argv[1:],open({:?},'w'))\n", marker.to_str().unwrap());
+    let script = format!("#!/usr/bin/python3\nimport json,sys,os,stat,pathlib\ncfg=pathlib.Path(os.environ['ANSIBLE_CONFIG'])\nassert cfg.name=='ansible.cfg'\nassert cfg.read_text()=='[defaults]\\n'\nassert stat.S_IMODE(cfg.stat().st_mode)==0o600\nassert str(cfg).startswith(os.environ['TMPDIR'])\nassert 'UNLISTED_PRIVATE_VALUE' not in os.environ\nassert stat.S_IMODE(os.stat(os.environ['TMPDIR']).st_mode)==0o700\nassert os.environ['ANSIBLE_LOCAL_TEMP'].startswith(os.environ['TMPDIR'])\njson.dump(sys.argv[1:],open({:?},'w'))\n", marker.to_str().unwrap());
     let (environment, manifest) = recipe_environment(dir.path(), true, false, &script);
     let plan = dir.path().join("plan.json");
     let summary = cli_plan(&environment, &manifest, "check", &plan);
@@ -223,6 +223,304 @@ fn static_plan_does_not_execute_and_approved_check_runs_only_bound_arguments() {
     assert!(args.contains(&"--check".to_string()));
     assert!(args.contains(&"node-a".to_string()));
     assert!(args.contains(&"{\"cmdmesh_allow_changes\":false,\"lifecycle_owner\":\"terraform\"}".to_string()));
+}
+
+#[test]
+fn actual_ansible_check_ignores_ambient_configuration() {
+    let Ok(ansible) = std::env::var("CMDMESH_TEST_ANSIBLE") else {
+        eprintln!("Set CMDMESH_TEST_ANSIBLE for the actual Ansible regression check");
+        return;
+    };
+    let dir = temporary();
+    let (environment, manifest) = recipe_environment(dir.path(), true, false, "#!/bin/sh\nexit 99\n");
+    let mut config: Value = serde_json::from_slice(&fs::read(&environment).unwrap()).unwrap();
+    config["execution"]["ansible_executable"] = json!(ansible);
+    config["execution"]["timeout_seconds"] = json!(30);
+    write_json(&environment, config);
+    fs::write(
+        dir.path().join("inventory.ini"),
+        "[cmdmesh_targets]\nnode-a ansible_connection=local\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("recipe/playbook.yml"), "---\n- hosts: cmdmesh_targets\n  gather_facts: false\n  tasks:\n    - ansible.builtin.assert:\n        that: ansible_check_mode\n    - ansible.builtin.debug:\n        msg: synthetic-private-preview\n").unwrap();
+    fs::write(
+        dir.path().join("recipe/ansible.cfg"),
+        "[defaults]\nstdout_callback=nonexistent_ambient_callback\n",
+    )
+    .unwrap();
+    let plan = dir.path().join("plan.json");
+    let summary = cli_plan(&environment, &manifest, "check", &plan);
+    let logs = dir.path().join("logs");
+    let without_logs = binary()
+        .env("ANSIBLE_CONFIG", "/nonexistent/unsafe.cfg")
+        .args([
+            "recipe",
+            "execute",
+            "--plan",
+            plan.to_str().unwrap(),
+            "--approve-digest",
+            summary["digest"].as_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        without_logs.status.success(),
+        "{}",
+        String::from_utf8_lossy(&without_logs.stderr)
+    );
+    assert!(!logs.exists());
+    let output = binary()
+        .env("ANSIBLE_CONFIG", "/nonexistent/unsafe.cfg")
+        .args([
+            "recipe",
+            "execute",
+            "--plan",
+            plan.to_str().unwrap(),
+            "--approve-digest",
+            summary["digest"].as_str().unwrap(),
+            "--log-dir",
+            logs.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("synthetic-private-preview"));
+    let preview = fs::read_to_string(logs.join("step-0001.stdout")).unwrap();
+    assert!(preview.contains("synthetic-private-preview"));
+    assert!(preview.contains("PLAY RECAP"));
+    assert!(preview.contains("changed=0"));
+}
+
+#[test]
+fn recipe_logs_are_opt_in_private_and_preserve_failures_without_terminal_leaks() {
+    for code in [0, 7] {
+        let dir = temporary();
+        let script = format!("#!/usr/bin/python3\nimport sys\nprint('synthetic-secret-stdout')\nprint('synthetic-secret-stderr',file=sys.stderr)\nsys.exit({code})\n");
+        let (environment, manifest) = recipe_environment(dir.path(), true, false, &script);
+        let plan = dir.path().join("plan.json");
+        let summary = cli_plan(&environment, &manifest, "check", &plan);
+        for capture in [false, true] {
+            let logs = dir.path().join("logs");
+            let mut command = binary();
+            command.args([
+                "recipe",
+                "execute",
+                "--plan",
+                plan.to_str().unwrap(),
+                "--approve-digest",
+                summary["digest"].as_str().unwrap(),
+            ]);
+            if capture {
+                command.args(["--log-dir", logs.to_str().unwrap()]);
+            }
+            let output = command.output().unwrap();
+            assert_eq!(output.status.success(), code == 0);
+            assert!(!String::from_utf8_lossy(&output.stdout).contains("synthetic-secret"));
+            assert!(!String::from_utf8_lossy(&output.stderr).contains("synthetic-secret"));
+            if !capture {
+                assert!(!logs.exists());
+                continue;
+            }
+            assert_eq!(fs::metadata(&logs).unwrap().mode() & 0o777, 0o700);
+            for (name, expected) in [
+                ("step-0001.stdout", "synthetic-secret-stdout"),
+                ("step-0001.stderr", "synthetic-secret-stderr"),
+            ] {
+                assert_eq!(fs::metadata(logs.join(name)).unwrap().mode() & 0o777, 0o600);
+                assert!(fs::read_to_string(logs.join(name)).unwrap().contains(expected));
+            }
+            let report: Value =
+                serde_json::from_slice(&fs::read(logs.join("execution.json")).unwrap()).unwrap();
+            assert_eq!(report["status"], if code == 0 { "succeeded" } else { "failed" });
+            assert_eq!(report["completed_steps"], if code == 0 { 1 } else { 0 });
+        }
+    }
+}
+
+#[test]
+fn private_logs_remain_bounded_on_timeout_and_output_overflow() {
+    for (script, error) in [
+        (
+            "#!/usr/bin/python3\nimport time\nprint('synthetic-private-prefix',flush=True)\ntime.sleep(30)\n",
+            "timed out",
+        ),
+        (
+            "#!/usr/bin/python3\nprint('synthetic-private-prefix',flush=True)\nprint('x'*2000000)\n",
+            "exceeded limit",
+        ),
+    ] {
+        let dir = temporary();
+        let (environment, manifest) = recipe_environment(dir.path(), true, false, script);
+        let plan = dir.path().join("plan.json");
+        let summary = cli_plan(&environment, &manifest, "check", &plan);
+        let logs = dir.path().join("logs");
+        let output = binary()
+            .args([
+                "recipe",
+                "execute",
+                "--plan",
+                plan.to_str().unwrap(),
+                "--approve-digest",
+                summary["digest"].as_str().unwrap(),
+                "--log-dir",
+                logs.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains(error));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("synthetic-private-prefix"));
+        let raw = fs::read(logs.join("step-0001.stdout")).unwrap();
+        assert!(raw.starts_with(b"synthetic-private-prefix"));
+        assert!(raw.len() <= 1024 * 1024);
+        let report: Value = serde_json::from_slice(&fs::read(logs.join("execution.json")).unwrap()).unwrap();
+        assert_eq!(report["status"], "failed");
+    }
+}
+
+#[test]
+fn log_destinations_cannot_overwrite_or_modify_bound_inputs() {
+    let dir = temporary();
+    let marker = dir.path().join("called");
+    let script = format!(
+        "#!/usr/bin/python3\nfrom pathlib import Path\nPath({:?}).touch()\n",
+        marker.to_str().unwrap()
+    );
+    let (environment, manifest) = recipe_environment(dir.path(), true, false, &script);
+    fs::create_dir(dir.path().join("existing")).unwrap();
+    fs::write(dir.path().join("existing/preserve"), "keep").unwrap();
+    std::os::unix::fs::symlink(dir.path().join("existing"), dir.path().join("symlink")).unwrap();
+    let plan = dir.path().join("plan.json");
+    let summary = cli_plan(&environment, &manifest, "check", &plan);
+    for name in ["existing", "symlink", "recipe/logs", "missing-parent/logs"] {
+        let logs = dir.path().join(name);
+        let output = binary()
+            .args([
+                "recipe",
+                "execute",
+                "--plan",
+                plan.to_str().unwrap(),
+                "--approve-digest",
+                summary["digest"].as_str().unwrap(),
+                "--log-dir",
+                logs.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "destination {name} was accepted");
+        assert!(!marker.exists());
+    }
+    assert_eq!(
+        fs::read_to_string(dir.path().join("existing/preserve")).unwrap(),
+        "keep"
+    );
+    for approval in ["wrong", summary["digest"].as_str().unwrap()] {
+        if approval != "wrong" {
+            fs::write(dir.path().join("inventory.ini"), "changed").unwrap();
+        }
+        let logs = dir.path().join("never-created");
+        let output = binary()
+            .args([
+                "recipe",
+                "execute",
+                "--plan",
+                plan.to_str().unwrap(),
+                "--approve-digest",
+                approval,
+                "--log-dir",
+                logs.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(!logs.exists());
+        assert!(!marker.exists());
+    }
+}
+
+#[test]
+fn changed_or_legacy_runner_configuration_cannot_execute() {
+    let dir = temporary();
+    let marker = dir.path().join("called");
+    let script = format!(
+        "#!/usr/bin/python3\nfrom pathlib import Path\nPath({:?}).touch()\n",
+        marker.to_str().unwrap()
+    );
+    let (environment, manifest) = recipe_environment(dir.path(), true, false, &script);
+    let plan = dir.path().join("plan.json");
+    let summary = cli_plan(&environment, &manifest, "check", &plan);
+    let original: Value = serde_json::from_slice(&fs::read(&plan).unwrap()).unwrap();
+    for legacy in [false, true] {
+        let mut altered = original.clone();
+        if legacy {
+            altered.as_object_mut().unwrap().remove("ansible_config");
+        } else {
+            altered["ansible_config"] = json!("[defaults]\nstdout_callback=unsafe\n");
+        }
+        write_json(&plan, altered);
+        let logs = dir.path().join("never-created");
+        let output = binary()
+            .args([
+                "recipe",
+                "execute",
+                "--plan",
+                plan.to_str().unwrap(),
+                "--approve-digest",
+                summary["digest"].as_str().unwrap(),
+                "--log-dir",
+                logs.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(!logs.exists());
+        assert!(!marker.exists());
+    }
+}
+
+#[test]
+fn failed_second_step_records_only_completed_work_and_stops_the_recipe() {
+    let dir = temporary();
+    let script = "#!/usr/bin/python3\nimport pathlib,sys\nname=pathlib.Path(sys.argv[-1]).name\nprint(name)\nsys.exit(8 if name=='second.yml' else 0)\n";
+    let (environment, manifest) = recipe_environment(dir.path(), true, false, script);
+    let mut recipe: Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+    recipe["steps"] = json!([
+        {"id":"one","driver":"ansible","playbook":"playbook.yml"},
+        {"id":"two","driver":"ansible","playbook":"second.yml"},
+        {"id":"three","driver":"ansible","playbook":"third.yml"}
+    ]);
+    write_json(&manifest, recipe);
+    for name in ["second.yml", "third.yml"] {
+        fs::write(dir.path().join("recipe").join(name), "---\n").unwrap();
+    }
+    let plan = dir.path().join("plan.json");
+    let summary = cli_plan(&environment, &manifest, "check", &plan);
+    let logs = dir.path().join("logs");
+    let output = binary()
+        .args([
+            "recipe",
+            "execute",
+            "--plan",
+            plan.to_str().unwrap(),
+            "--approve-digest",
+            summary["digest"].as_str().unwrap(),
+            "--log-dir",
+            logs.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&fs::read(logs.join("execution.json")).unwrap()).unwrap();
+    assert_eq!(report["status"], "failed");
+    assert_eq!(report["completed_steps"], 1);
+    assert!(fs::read_to_string(logs.join("step-0002.stdout"))
+        .unwrap()
+        .contains("second.yml"));
+    assert!(!logs.join("step-0003.stdout").exists());
 }
 
 #[test]
@@ -495,6 +793,7 @@ fn cancellation_stops_the_owned_process_group() {
     let (environment, manifest) = recipe_environment(dir.path(), true, false, &script);
     let plan = dir.path().join("check.json");
     let summary = cli_plan(&environment, &manifest, "check", &plan);
+    let logs = dir.path().join("cancelled-logs");
     let child = binary()
         .args([
             "recipe",
@@ -503,6 +802,8 @@ fn cancellation_stops_the_owned_process_group() {
             plan.to_str().unwrap(),
             "--approve-digest",
             summary["digest"].as_str().unwrap(),
+            "--log-dir",
+            logs.to_str().unwrap(),
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -521,6 +822,9 @@ fn cancellation_stops_the_owned_process_group() {
     let output = child.wait_with_output().unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("cancelled"));
+    assert!(logs.join("step-0001.stdout").is_file());
+    let report: Value = serde_json::from_slice(&fs::read(logs.join("execution.json")).unwrap()).unwrap();
+    assert_eq!(report["status"], "failed");
     thread::sleep(Duration::from_millis(1400));
     assert!(!marker.exists());
 }
