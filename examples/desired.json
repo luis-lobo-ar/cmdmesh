@@ -2,6 +2,6 @@
   "schema_version": 1,
   "resources": [
     {"kind": "proxmox.node", "id": "node-a", "spec": {"status": "online"}},
-    {"kind": "proxmox.lxc", "id": "node-a/101", "spec": {"name": "example-app", "memory": 536870912, "status": "running"}}
+    {"kind": "proxmox.lxc", "id": "node-a/101", "spec": {"name": "example-app", "maxmem": 536870912, "status": "running"}}
   ]
 }

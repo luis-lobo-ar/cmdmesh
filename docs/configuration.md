@@ -1,8 +1,38 @@
 # Configuration reference
 
 The environment is JSON with `schema_version: 1`. Unknown fields are rejected.
-Paths resolve relative to the environment file. There is no automatic `.env`
-loading or parent-repository discovery.
+There is no automatic `.env` loading, private-parent discovery, or secret-store
+decryption. Copy [the full template](../examples/environment.json) into your own
+private environment. See [Proxmox setup](proxmox.md) for its expected directory layout.
+
+## Root fields
+
+| Field | Required or default | Meaning |
+| --- | --- | --- |
+| `schema_version` | Required, `1` | Environment format version |
+| `providers` | `{}` | Named inventory integrations |
+| `packages` | `{}` | Named local dependency roots |
+| `targets` | `{}` | Named recipe targets |
+| `execution` | Denied by default | CLI execution policy |
+
+An inventory-only environment needs no targets or Ansible. Offline drift needs
+no environment at all. Each target must supply its inventory, limit, and owner;
+`vars_file` is optional. Unknown keys and incorrectly typed values are rejected.
+
+## Path rules
+
+| Path | Base directory |
+| --- | --- |
+| CLI `--config`, manifest, catalog, desired, inventory, plan, and output arguments | Current working directory |
+| Provider `executable`, package roots, target `inventory` and `vars_file`, execution `ansible_executable` | Environment file's directory |
+| Nonempty provider `config.ca_file` string | Normalized by the core relative to the environment file |
+| Step `playbook` and recipe `recovery` | Recipe directory |
+
+Other fields inside provider-specific `config` have integration-defined semantics;
+the core does not resolve arbitrary custom path keys. Provider subprocesses run
+from the environment directory. Recipe processes run from the recipe directory.
+Absolute paths remain absolute. Plans record canonical resolved inputs, so moving
+or editing bound files generally requires a new plan.
 
 ## Providers
 
@@ -14,6 +44,11 @@ loading or parent-repository discovery.
 | `expected_sha256` | Optional SHA-256 of the executable file. Pin package source separately when an executable imports local modules. |
 | `config` | Provider-specific JSON passed through the versioned protocol. |
 | `env_allowlist` | Environment variable names forwarded to the child. The default is an empty list. |
+
+Provider `config` defaults to JSON null; the integration defines its required
+fields. `expected_sha256` is optional and covers only the executable entrypoint,
+not every imported module or dependency. Pin and review the whole integration
+checkout separately. Executables are local trusted code, never auto-downloaded.
 
 The runner supplies a fixed `PATH`, `LANG=C.UTF-8`, and `TERM=dumb`. It creates
 private temporary directories and sets `TMPDIR`, `TMP`, `TEMP`,
@@ -55,6 +90,20 @@ inventory alias for a dotted hostname or an address.
 | `ansible_executable` | Fixed search path | Optional explicit executable path, useful for a pinned virtual environment. |
 | `timeout_seconds` | `300` | Per-step timeout, between 1 and 3600 seconds. |
 | `env_allowlist` | `[]` | Explicit execution environment references, such as `SSH_AUTH_SOCK`. |
+
+Without an explicit `ansible_executable`, the runner searches `/usr/local/bin`,
+`/usr/bin`, and `/bin`, in that order. It does not search your shell's custom PATH.
+Set this field when using a virtual environment. Ansible Core 2.20.4 is the
+qualified example controller; the companion Proxmox collection declares a
+minimum of 2.19.0. Its Python controller requirement is separate from the
+stdlib-only Proxmox API executable.
+
+The per-step timeout must be an integer from 1 to 3600 seconds. Environment
+variable names must use uppercase ASCII letters, digits, and underscores, and
+cannot start with a digit. `PATH`, `LD_*`, `DYLD_*`, `PYTHON*`, `ANSIBLE_*`,
+`BASH_ENV`, and `ENV` are refused as allowlist entries. Forward only what the
+selected tool needs. Secret values are not embedded in plans, but same-user or
+privileged processes can inspect environments. Trust the controller.
 
 The runner writes a valid `ansible.cfg` into owner-only
 per-process scratch, with file mode 0600. It sets `ANSIBLE_CONFIG` to that file,

@@ -26,3 +26,8 @@ jobs:
           CMDMESH_TEST_ANSIBLE: ${{ github.workspace }}/.generated/ansible/bin/ansible-playbook
           TMPDIR: ${{ github.workspace }}/.generated/tmp
       - run: cargo build --locked --release
+      - name: Verify README examples and local documentation links
+        run: python3 -m unittest discover -s tests -p test_docs.py -v
+        env:
+          CMDMESH_BIN: ${{ github.workspace }}/target/release/cmdmesh
+          TMPDIR: ${{ github.workspace }}/.generated/tmp

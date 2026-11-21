@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "providers": {
+    "proxmox": {
+      "executable": "../cmdmesh-proxmox/bin/cmdmesh-proxmox",
+      "config": {
+        "endpoint": "https://hypervisor.example.invalid:8006",
+        "ca_file": "./ca/lab.pem",
+        "token_id_env": "PROXMOX_TOKEN_ID",
+        "token_secret_env": "PROXMOX_TOKEN_SECRET",
+        "timeout_seconds": 10
+      },
+      "env_allowlist": ["PROXMOX_TOKEN_ID", "PROXMOX_TOKEN_SECRET"]
+    }
+  }
+}

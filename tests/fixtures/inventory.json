@@ -3,7 +3,7 @@
   "complete": true,
   "resources": [
     {"kind": "proxmox.node", "id": "node-a", "properties": {"status": "online"}},
-    {"kind": "proxmox.lxc", "id": "node-a/101", "properties": {"name": "example-app", "memory": 536870912, "status": "running"}}
+    {"kind": "proxmox.lxc", "id": "node-a/101", "properties": {"name": "example-app", "maxmem": 536870912, "status": "running"}}
   ],
   "warnings": []
 }

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "targets": {
+    "local": {
+      "inventory": "inventory.yml",
+      "limit": "demo",
+      "lifecycle_owner": "ansible"
+    }
+  },
+  "execution": {
+    "allow_execution": true,
+    "allow_mutations": false,
+    "ansible_executable": "../ansible/bin/ansible-playbook",
+    "timeout_seconds": 30
+  }
+}
