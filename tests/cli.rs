@@ -184,7 +184,7 @@ fn cli_plan(environment: &Path, manifest: &Path, operation: &str, plan: &Path) -
 fn static_plan_does_not_execute_and_approved_check_runs_only_bound_arguments() {
     let dir = temporary();
     let marker = dir.path().join("called.json");
-    let script = format!("#!/usr/bin/python3\nimport json,sys,os,stat,pathlib\ncfg=pathlib.Path(os.environ['ANSIBLE_CONFIG'])\nassert cfg.name=='ansible.cfg'\nassert cfg.read_text()=='[defaults]\\n'\nassert stat.S_IMODE(cfg.stat().st_mode)==0o600\nassert str(cfg).startswith(os.environ['TMPDIR'])\nassert 'UNLISTED_PRIVATE_VALUE' not in os.environ\nassert stat.S_IMODE(os.stat(os.environ['TMPDIR']).st_mode)==0o700\nassert os.environ['ANSIBLE_LOCAL_TEMP'].startswith(os.environ['TMPDIR'])\njson.dump(sys.argv[1:],open({:?},'w'))\n", marker.to_str().unwrap());
+    let script = format!("#!/usr/bin/python3\nimport json,sys,os,stat,pathlib\ncfg=pathlib.Path(os.environ['ANSIBLE_CONFIG'])\nassert cfg.name=='ansible.cfg'\nassert cfg.read_text().startswith('[defaults]\\n')\nassert stat.S_IMODE(cfg.stat().st_mode)==0o600\nassert str(cfg).startswith(os.environ['TMPDIR'])\nassert 'UNLISTED_PRIVATE_VALUE' not in os.environ\nassert stat.S_IMODE(os.stat(os.environ['TMPDIR']).st_mode)==0o700\nassert os.environ['ANSIBLE_LOCAL_TEMP'].startswith(os.environ['TMPDIR'])\njson.dump(sys.argv[1:],open({:?},'w'))\n", marker.to_str().unwrap());
     let (environment, manifest) = recipe_environment(dir.path(), true, false, &script);
     let plan = dir.path().join("plan.json");
     let summary = cli_plan(&environment, &manifest, "check", &plan);
@@ -293,6 +293,62 @@ fn actual_ansible_check_ignores_ambient_configuration() {
     assert!(preview.contains("synthetic-private-preview"));
     assert!(preview.contains("PLAY RECAP"));
     assert!(preview.contains("changed=0"));
+}
+
+#[test]
+fn actual_ansible_ssh_does_not_require_a_multiplexing_socket() {
+    let Ok(ansible) = std::env::var("CMDMESH_TEST_ANSIBLE") else {
+        return;
+    };
+    let dir = temporary();
+    let marker = dir.path().join("ssh-arguments.json");
+    let fake_ssh = dir.path().join("fake-ssh");
+    executable(
+        &fake_ssh,
+        &format!(
+            "#!/usr/bin/python3\nimport json,sys\njson.dump(sys.argv[1:],open({:?},'w'))\nsys.exit(255)\n",
+            marker.to_str().unwrap()
+        ),
+    );
+    let (environment, manifest) = recipe_environment(dir.path(), true, false, "#!/bin/sh\nexit 99\n");
+    let mut config: Value = serde_json::from_slice(&fs::read(&environment).unwrap()).unwrap();
+    config["execution"]["ansible_executable"] = json!(ansible);
+    config["execution"]["timeout_seconds"] = json!(30);
+    config["targets"]["lab"]["inventory"] = json!("ssh-inventory.json");
+    write_json(&environment, config);
+    write_json(
+        &dir.path().join("ssh-inventory.json"),
+        json!({"all":{"children":{"cmdmesh_targets":{"hosts":{"node-a":{
+            "ansible_connection":"ssh","ansible_host":"192.0.2.10","ansible_user":"operator",
+            "ansible_ssh_executable":fake_ssh
+        }}}}}}),
+    );
+    fs::write(
+        dir.path().join("recipe/playbook.yml"),
+        "---\n- hosts: cmdmesh_targets\n  gather_facts: false\n  tasks:\n    - ansible.builtin.ping:\n",
+    )
+    .unwrap();
+    let plan = dir.path().join("plan.json");
+    let summary = cli_plan(&environment, &manifest, "check", &plan);
+    let output = binary()
+        .args([
+            "recipe",
+            "execute",
+            "--plan",
+            plan.to_str().unwrap(),
+            "--approve-digest",
+            summary["digest"].as_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "the synthetic SSH executable deliberately refuses the connection"
+    );
+    let args: Vec<String> = serde_json::from_slice(&fs::read(marker).unwrap()).unwrap();
+    assert!(args.contains(&"ControlMaster=no".into()), "{args:?}");
+    assert!(args.contains(&"ControlPersist=no".into()), "{args:?}");
+    assert!(args.contains(&"ControlPath=none".into()), "{args:?}");
 }
 
 #[test]

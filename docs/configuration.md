@@ -56,11 +56,15 @@ inventory alias for a dotted hostname or an address.
 | `timeout_seconds` | `300` | Per-step timeout, between 1 and 3600 seconds. |
 | `env_allowlist` | `[]` | Explicit execution environment references, such as `SSH_AUTH_SOCK`. |
 
-The runner writes a valid `ansible.cfg` containing `[defaults]` into owner-only
+The runner writes a valid `ansible.cfg` into owner-only
 per-process scratch, with file mode 0600. It sets `ANSIBLE_CONFIG` to that file,
 so ambient configuration files are not selected. The configuration text is part
 of the plan digest. Plans from 0.1.0 must be recreated because they lack that field.
 The runner still forces host-key checking and disables automatic diffs.
+Its SSH defaults disable multiplexing with `ControlMaster=no`, `ControlPersist=no`,
+and `ControlPath=none`. This avoids OpenSSH's Unix-socket path-length limit in
+nested private work directories. Each operation opens its own SSH connection.
+Trusted inventory can still override connection settings.
 It supplies the dependency collection search paths explicitly.
 It does not inherit arbitrary Ansible options or pass through shell arguments.
 Installed Ansible modules, default plugin locations, SSH configuration, and

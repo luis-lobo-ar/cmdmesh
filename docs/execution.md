@@ -92,6 +92,10 @@ not prove that remote work stopped or rolled back. A missing report also leaves
 the outcome unknown. Inspect the actual target before retrying.
 
 Local scratch directories are owner-only and are removed after execution.
+The managed SSH defaults do not use multiplexing sockets, so long private
+directory paths do not require a system-temp socket fallback. This costs an
+additional SSH handshake for each operation. Explicit trusted inventory overrides
+can change those defaults and remain the operator's responsibility.
 Timeout and SIGINT or SIGTERM cancellation terminate the owned local process
 group, including SSH children that remain in that group. Code that deliberately
 creates a separate session can escape the group. CmdMesh does not contain such

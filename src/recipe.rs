@@ -242,7 +242,7 @@ pub fn plan(
             cwd: root.clone(),
         });
     }
-    let mut plan = Plan { schema_version:1, digest:String::new(), environment:environment.path.clone(), manifest, target:target_name.into(), operation, inputs, commands, collection_paths, ansible_config:"[defaults]\n".into(),
+    let mut plan = Plan { schema_version:1, digest:String::new(), environment:environment.path.clone(), manifest, target:target_name.into(), operation, inputs, commands, collection_paths, ansible_config:"[defaults]\n[ssh_connection]\nssh_args = -C -o ControlMaster=no -o ControlPersist=no -o ControlPath=none\n".into(),
         warning:"Static execution plan, not an Ansible change preview. Trusted Ansible code may have effects even in check mode. Approval is acknowledgement, not a sandbox. Remote outcome may be unknown on interruption.".into() };
     plan.digest = plan_digest(&plan)?;
     Ok(plan)
