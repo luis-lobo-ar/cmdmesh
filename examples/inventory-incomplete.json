@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "complete": false,
+  "resources": [
+    {"kind": "proxmox.node", "id": "node-a", "properties": {"status": "online"}}
+  ],
+  "warnings": ["Synthetic example: the guest collection could not be read"]
+}

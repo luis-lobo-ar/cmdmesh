@@ -1,0 +1,14 @@
+---
+- name: Try CmdMesh on the local controller
+  hosts: cmdmesh_targets
+  gather_facts: false
+  tasks:
+    - name: Refuse anything except check mode
+      ansible.builtin.assert:
+        that:
+          - ansible_check_mode
+          - not (cmdmesh_allow_changes | default(false) | bool)
+
+    - name: Show the local result
+      ansible.builtin.debug:
+        msg: CmdMesh local check completed. No infrastructure was changed.

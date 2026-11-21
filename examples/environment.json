@@ -16,7 +16,7 @@
   "packages": {"proxmox": "../cmdmesh-proxmox"},
   "targets": {
     "lab": {
-      "inventory": "./ansible/inventory.ini",
+      "inventory": "./ansible/inventory.yml",
       "limit": "node-a",
       "vars_file": "./ansible/vars.yml",
       "lifecycle_owner": "terraform"
@@ -25,6 +25,7 @@
   "execution": {
     "allow_execution": false,
     "allow_mutations": false,
+    "ansible_executable": "../cmdmesh/.generated/ansible/bin/ansible-playbook",
     "timeout_seconds": 300,
     "env_allowlist": ["SSH_AUTH_SOCK"]
   }

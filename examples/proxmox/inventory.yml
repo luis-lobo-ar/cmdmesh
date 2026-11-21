@@ -1,0 +1,13 @@
+---
+# Fictional. Copy into your private environment and replace the address/key.
+all:
+  children:
+    cmdmesh_targets:
+      hosts:
+        node-a:
+          ansible_host: 192.0.2.10
+          ansible_user: root
+          ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+          ansible_python_interpreter: /usr/bin/python3
+          ansible_ssh_common_args: -o BatchMode=yes -o StrictHostKeyChecking=yes
+          ansible_remote_tmp: /var/lib/vz/cmdmesh/ansible-tmp

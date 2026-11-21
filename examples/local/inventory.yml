@@ -1,0 +1,8 @@
+---
+all:
+  children:
+    cmdmesh_targets:
+      hosts:
+        demo:
+          ansible_connection: local
+          ansible_become: false

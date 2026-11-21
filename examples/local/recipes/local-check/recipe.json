@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "local-check",
+  "title": "Local check",
+  "summary": "Verify check mode and print a message on the local controller",
+  "status": "ready",
+  "requirements": ["Ansible installed on the controller"],
+  "dependencies": [],
+  "steps": [{"id": "hello", "driver": "ansible", "playbook": "playbook.yml"}],
+  "verification": ["Inspect the local message and the zero-change recap"],
+  "recovery": "README.md"
+}
