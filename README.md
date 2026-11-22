@@ -5,6 +5,38 @@ with desired state, and running reviewed operations recipes. An optional MCP
 server exposes inventory and planning to AI clients. Your hosts, credentials,
 policies, state, and execution evidence stay in your own private environment.
 
+## Why CmdMesh?
+
+Operating procedures often live in scripts, command history, and instructions
+tied to one environment. Sharing a playbook still leaves someone to select the
+right inputs, review the operation, and keep its execution result.
+
+CmdMesh gives those procedures a common workflow:
+
+- Reuse a recipe across environments while keeping each environment's inventory,
+  variables, credentials, and permissions private.
+- Inspect infrastructure through JSON inventory and desired-state comparisons,
+  with incomplete observations explicitly reported.
+- Review a plan that identifies the target, commands, and bound inputs. Execution
+  requires that plan's digest and refuses changed bound inputs.
+- Give operators and AI clients the same inventory and planning functions through
+  CLI and MCP. Run approved operations through the CLI.
+- Keep structured execution results and, when requested, private tool output for
+  troubleshooting.
+
+For example, two administrators can use the same Proxmox host-baseline recipe
+with different hosts and package selections. Each keeps a private environment
+and reviews a separate plan. They share the procedure without copying credentials
+or maintaining a fork for every installation.
+
+Ansible still runs the playbooks. Terraform still manages the resources you
+assign to it through its separate workflow. CmdMesh adds recipe discovery,
+inventory comparison, plans tied to reviewed inputs, and approved Ansible
+execution. It fits homelab maintainers and infrastructure teams that want to
+share operating procedures and use AI for inspection and planning.
+
+## What is included
+
 Start with the offline examples below. You do not need Proxmox, cloud access,
 credentials, or a private parent project to try them.
 
