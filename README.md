@@ -117,8 +117,10 @@ credentials, or a private parent project to try them.
 | [cmdmesh-proxmox](https://github.com/luis-lobo-ar/cmdmesh-proxmox) | GET-only API inventory, eleven Ansible operations roles, and a separate Terraform LXC module |
 | [cmdmesh-recipes](https://github.com/luis-lobo-ar/cmdmesh-recipes) | Reviewed procedures that combine integration roles with verification and recovery instructions |
 
-Core examples target **0.2.0**, with companion Proxmox and recipe packages at
-0.1.0. CmdMesh does not download plugins during normal operations, automatically
+Core examples target **0.2.0**; the Proxmox integration remains **0.1.0**.
+Operation discovery needs a catalog revision containing `operation.json`
+sidecars. Existing schema-1 recipe commands remain compatible with older catalogs.
+CmdMesh does not download plugins during normal operations, automatically
 reconcile drift, or run Terraform apply. Execution and mutations default to
 disabled. MCP has no execution or apply tool.
 
