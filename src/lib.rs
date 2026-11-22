@@ -1,5 +1,6 @@
 //! Shared operations for the CLI and read-only MCP adapter.
 pub mod config;
+pub mod inspection;
 pub mod inventory;
 pub mod mcp;
 pub mod operations;
@@ -22,7 +23,7 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     serde_json::from_slice(&read_regular_file(path)?).context("invalid JSON input")
 }
 
-fn read_regular_file(path: &Path) -> Result<Vec<u8>> {
+pub(crate) fn read_regular_file(path: &Path) -> Result<Vec<u8>> {
     let file = fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NONBLOCK)

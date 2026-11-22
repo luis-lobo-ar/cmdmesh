@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use cmdmesh::{config::Environment, inventory, operations, read_json, recipe, write_private_json};
+use cmdmesh::{
+    config::Environment, inspection, inventory, operations, read_json, recipe, write_private_json,
+};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -17,6 +19,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Invoke a configured pinned inspection integration. No apply action.
+    Inspection {
+        #[command(subcommand)]
+        command: Inspection,
+    },
     Inventory {
         #[command(subcommand)]
         command: Inventory,
@@ -42,6 +49,29 @@ enum Inventory {
     Pull {
         #[arg(long)]
         provider: String,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+}
+#[derive(Subcommand)]
+enum Inspection {
+    Describe {
+        #[arg(long)]
+        inspector: String,
+        #[arg(long, default_value_t = 120)]
+        timeout_seconds: u64,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    Run {
+        #[arg(long)]
+        inspector: String,
+        #[arg(long)]
+        operation: String,
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long, default_value_t = 120)]
+        timeout_seconds: u64,
         #[arg(long)]
         out: Option<PathBuf>,
     },
@@ -130,6 +160,43 @@ async fn main() {
 async fn run(cli: Cli) -> Result<()> {
     cmdmesh::mcp::install_cancellation_handlers();
     match cli.command {
+        Command::Inspection { command } => {
+            let (inspector, operation, input, timeout_seconds, out) = match command {
+                Inspection::Describe {
+                    inspector,
+                    timeout_seconds,
+                    out,
+                } => (
+                    inspector,
+                    "describe".to_owned(),
+                    serde_json::json!({}),
+                    timeout_seconds,
+                    out,
+                ),
+                Inspection::Run {
+                    inspector,
+                    operation,
+                    input,
+                    timeout_seconds,
+                    out,
+                } => (inspector, operation, read_json(&input)?, timeout_seconds, out),
+            };
+            let receipt = inspection::run(
+                &load_environment(cli.config)?,
+                &inspector,
+                &operation,
+                input,
+                timeout_seconds,
+            )?;
+            if let Some(out) = out {
+                write_private_json(&out, &receipt)?;
+            } else {
+                print_json(&receipt)?;
+            }
+            if receipt.result.outcome != inspection::Outcome::Observed {
+                anyhow::bail!("inspection did not produce an observed outcome; see receipt diagnostics");
+            }
+        }
         Command::Inventory {
             command: Inventory::Pull { provider, out },
         } => {

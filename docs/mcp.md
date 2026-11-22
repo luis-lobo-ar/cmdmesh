@@ -47,6 +47,7 @@ configuration. An optional client `env` field is client-specific, not CmdMesh sy
 | `cmdmesh_recipe_inspect` | `{"manifest":"/opt/cmdmesh-recipes/recipes/proxmox-host-baseline/recipe.json"}` | No |
 | `cmdmesh_recipe_plan` | `{"manifest":"/opt/cmdmesh-recipes/recipes/proxmox-host-baseline/recipe.json","target":"lab","operation":"check"}` | Yes |
 | `cmdmesh_operation` | `{"action":"list","catalog":"/opt/cmdmesh-recipes","query":"host tools","offset":0,"limit":20}` | List/inspect: no; validation/planning: yes |
+| `cmdmesh_inspection` | `{"action":"describe","inspector":"proxmox-inspector"}` | Yes |
 
 Use absolute paths for file arguments; the client controls the server's working
 directory. Unknown argument fields are rejected. Tool results encode JSON in
@@ -67,6 +68,13 @@ returns `configuration-required`; planning requires the server environment.
 The tool never echoes private input values or runs prerequisite checks. Planning
 returns an existing schema-1 recipe plan, not a file or completed execution.
 There is no `execute`, `approve` or output-path argument. See [operation discovery](operations.md).
+
+`cmdmesh_inspection` discovers finite integration actions with `describe`. For
+`run`, add `operation` and `inputs` (a private action-input JSON path), with
+optional `timeout_seconds` from 1 through 120. It uses the same mandatory pin,
+captured executable, bounded transport and receipt as the CLI. Inspect
+`result.outcome`; a valid negative result is returned with diagnostics.
+See [the inspection guide](inspections.md) for configuration and exact protocol.
 
 ## Use CLI and MCP together
 

@@ -10,7 +10,7 @@ private environment. See [Proxmox setup](proxmox.md) for its expected directory 
 | Field | Required or default | Meaning |
 | --- | --- | --- |
 | `schema_version` | Required, `1` | Environment format version |
-| `providers` | `{}` | Named inventory integrations |
+| `providers` | `{}` | Named inventory or inspection integrations |
 | `packages` | `{}` | Named local dependency roots |
 | `targets` | `{}` | Named recipe targets |
 | `execution` | Denied by default | CLI execution policy |
@@ -49,6 +49,11 @@ Provider `config` defaults to JSON null; the integration defines its required
 fields. `expected_sha256` is optional and covers only the executable entrypoint,
 not every imported module or dependency. Pin and review the whole integration
 checkout separately. Executables are local trusted code, never auto-downloaded.
+
+Native inspections use a separate entrypoint in a dedicated provider slot. For
+`inspection describe/run`, the executable pin is mandatory and `config` must be
+an object. Core captures pinned bytes before launch. Use a self-contained artifact
+to cover its implementation. See [native inspection configuration](inspections.md).
 
 The runner supplies a fixed `PATH`, `LANG=C.UTF-8`, and `TERM=dumb`. It creates
 private temporary directories and sets `TMPDIR`, `TMP`, `TEMP`,

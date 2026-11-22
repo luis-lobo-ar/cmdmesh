@@ -1,7 +1,7 @@
 # Command-line reference
 
-All successful data commands print JSON, except `inventory pull --out`, which
-writes the snapshot instead. Help and version output are text. Examples assume
+All successful data commands print JSON, except inventory and inspection `--out`,
+which write the result instead. Help and version output are text. Examples assume
 `cmdmesh` is on PATH. The CLI supports Unix controllers.
 
 ## Global options
@@ -13,7 +13,7 @@ cmdmesh --version
 ```
 
 `--config` names a schema-version-1 environment JSON file. It is required by
-inventory and planning, not by offline drift or recipe discovery. It can also be
+inventory, inspections and planning, not by offline drift or recipe discovery. It can also be
 supplied to `mcp` for tools that need an environment. `recipe execute` reads the
 environment path already bound into its plan, not a new global configuration.
 
@@ -33,6 +33,19 @@ executable receives the inventory protocol request. The result has
 Without `--out`, the snapshot is printed. With `--out`, the parent must exist and
 the new file is mode 0600. Existing paths are refused. No implicit cache is read
 or updated. A partial valid snapshot can exit zero; check `complete` and warnings.
+
+## Native inspections
+
+```text
+cmdmesh --config FILE inspection describe --inspector ID [--timeout-seconds N] [--out NEW_FILE]
+cmdmesh --config FILE inspection run --inspector ID --operation ACTION --input FILE [--timeout-seconds N] [--out NEW_FILE]
+```
+
+ID selects a provider with a mandatory executable pin. The input file contains an
+action object, without a protocol envelope or config. Describe discovers finite
+action schemas through that pinned transport. Valid outcomes produce private
+receipts; only observed exits zero. Timeout is 1..120 seconds, default 120.
+See [inspection configuration and protocol](inspections.md).
 
 ## Drift
 
@@ -119,7 +132,7 @@ cmdmesh [--config FILE] mcp
 ```
 
 This starts a newline-delimited JSON-RPC stdio server. Stdout is protocol-only.
-It exposes six read-only tools, with no execution endpoint. File paths in tool
+It exposes seven read-only tools, with no mutation execution endpoint. File paths in tool
 arguments should be absolute because the client controls the process directory.
 See [MCP configuration](mcp.md).
 
