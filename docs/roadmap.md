@@ -62,21 +62,23 @@ reusable function, explicit result, validation rule or behavioral regression tes
 
 ## What exists today
 
-Core source is **0.2.0**; the Proxmox integration remains **0.1.0**. The catalog's
-new operation sidecars require core 0.2.0; existing recipe schemas remain compatible.
+Core source is **0.2.0**. The Proxmox collection retains **0.1.0**; its new native
+inspector reports **0.2.0** and uses a separately pinned archive. The catalog's
+operation sidecars require core 0.2.0; existing recipe schemas remain compatible.
 See the [current CLI](cli.md) and [execution contract](execution.md).
 
 | Capability | Current status | Remaining extraction work |
 | --- | --- | --- |
-| Provider inventory and local JSON drift | Implemented, independent of Ansible | More reusable target/access diagnostics and explicit procedure discovery |
+| Provider inventory and local JSON drift | Implemented, independent of Ansible | Independently qualify API visibility in private workflows |
 | Recipe list, inspect and static plan | Implemented | Executable requirements and postconditions |
-| Operation discovery | Intent search, typed private target reference, supported entrypoint, known failures/recovery and bound static planning | Native inspection contracts and broader typed inputs follow the extracted capabilities |
+| Operation discovery | Intent search, typed private target reference, supported entrypoint, known failures/recovery and bound static planning | Broader procedure inputs and executable requirements |
+| Native inspections | Five typed Proxmox actions, mandatory executable pin, captured code, structured receipts and diagnostic guidance | Connect live evidence to executable procedure preflight and postconditions |
 | Ansible check/apply runner | Implemented, execution denied by default | Broader procedure qualification and outcome evidence |
-| MCP | Six tools, including grouped operation discovery/planning; no execution tool | Planned native inspection, verification and run-status coverage |
-| Proxmox operations | API provider, eleven roles, shared operation guard and a direct-use Terraform LXC module | Audit remaining private wrappers and extract missing general behavior |
+| MCP | Seven read-only tools, including grouped operation discovery and native inspections; no apply tool | Verified-procedure and run-status coverage |
+| Proxmox operations | API provider, eleven roles, shared guard, native target/comparison/controller/SSH/TLS inspections and direct-use Terraform LXC module | Qualify real workflows before replacing private wrappers |
 | Catalog | Four ready entries: host baseline, backup schedule, host maintenance and LXC growth | Ready means local contract checks, not universal infrastructure qualification |
 | Persistent LXC/ZFS | Draft with no executable playbook | Agree the convention, then qualify retained-data rebuild and independent restore |
-| Result/log handling | Local execution status and optional bounded raw logs | Correlated verification evidence, known-error guidance and explicit uncertainty |
+| Result/log handling | Local execution status/logs plus native inspection receipts, explicit negative outcomes and recovery guidance | Correlated mutation/verification evidence and explicit uncertainty |
 | Native Terraform execution in CmdMesh | Not implemented; direct Terraform is documented | Consider a driver only when an audited procedure needs it and its contract is reviewed |
 
 ## The extraction method
@@ -178,7 +180,7 @@ does not make the first finish line depend on a general cloud platform.
 | P0: foundation | Available with current limits | Core, integration, catalog | None | Inventory, comparison, plans and Ansible execution exist |
 | P1: history/script audit | Initial selected-source audit complete; source-quality limits retained privately | Maintainers with private-source access | P0 | A traceable source/candidate ledger explains recurring tasks, failures and coverage gaps |
 | P2: component and discovery contracts | First versioned recipe-plan contract implemented | Core and integration maintainers | P1 | A stable operation entry describes how to perform a known task without reading its old chat |
-| P3: extract Proxmox primitives | Planned | Proxmox/core maintainers | P2 | High-value inspections and helpers run with explicit inputs and tested failure behavior |
+| P3: extract Proxmox primitives | First selected batch implemented and qualified in synthetic/CI tests | Proxmox/core maintainers | P2 | Five standalone actions and shared CLI/MCP transport run with explicit inputs and tested failure behavior |
 | P4: compose executable procedures | Planned | Core, integration, catalog | P3 | Recipes combine the primitives with preflight, plan, result, verification and recovery |
 | P5: qualify complete Proxmox workflows | Planned | Maintainers and environment owners | P4 | Representative baseline, capacity, maintenance and recovery procedures work end to end |
 | P6: agent evaluation and private adoption | Planned | Core/catalog maintainers and consumers | P5 | A fresh agent and a second private installation reuse the procedures without historical context |
@@ -219,6 +221,19 @@ actionable errors. Schema/compatibility changes are reviewed; current manifests
 must not silently accept new fields or broaden old approvals.
 
 ### P3: extract high-value Proxmox primitives
+
+The first selected batch is delivered: exact target resolution, strict observation
+comparison, controller diagnosis, explicit SSH identity and verified TLS access.
+The standalone archive contains shared inventory/probe code. Core freezes its
+mandatory pinned bytes before invocation and preserves structured negative
+outcomes. CLI and MCP use the same transport. See [native inspections](inspections.md)
+for qualified source pins, schemas, examples and runtime limits.
+
+Tests reproduce duplicate-identity false success, invalid CA fallback, requested
+wildcard certificate identity, implicit SSH certificate discovery and detached
+probe children surviving cancellation. Real infrastructure qualification and
+private adoption remain P5/P6 work. No mutation postcondition is implied by these
+read-only results.
 
 Choose the first batch from P1's ranked ledger. Reuse the existing inventory
 provider and roles, then extract missing target/access/controller/capacity helpers
