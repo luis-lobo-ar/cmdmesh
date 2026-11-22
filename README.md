@@ -115,11 +115,12 @@ credentials, or a private parent project to try them.
 
 | Component | What it provides |
 | --- | --- |
-| **This repository** | Rust CLI, read-only stdio MCP, JSON drift comparison, static plans, and approved Ansible execution |
-| [cmdmesh-proxmox](https://github.com/luis-lobo-ar/cmdmesh-proxmox) | GET-only API inventory, eleven Ansible operations roles, and a separate Terraform LXC module |
+| **This repository** | Rust CLI, read-only stdio MCP, pinned native inspection transport, JSON drift comparison, static plans, and approved Ansible execution |
+| [cmdmesh-proxmox](https://github.com/luis-lobo-ar/cmdmesh-proxmox) | GET-only API inventory, five native inspection actions, eleven Ansible operations roles, and a separate Terraform LXC module |
 | [cmdmesh-recipes](https://github.com/luis-lobo-ar/cmdmesh-recipes) | Reviewed procedures that combine integration roles with verification and recovery instructions |
 
-Core examples target **0.2.0**; the Proxmox integration remains **0.1.0**.
+Core examples target **0.2.0**. The Proxmox collection retains **0.1.0**;
+the new native inspector reports **0.2.0** and uses a separate archive pin.
 Operation discovery needs a catalog revision containing `operation.json`
 sidecars. Existing schema-1 recipe commands remain compatible with older catalogs.
 CmdMesh does not download plugins during normal operations, automatically

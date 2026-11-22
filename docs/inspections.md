@@ -7,6 +7,16 @@ The same function serves CLI and MCP. There is no inspection apply action.
 
 ## Configure the integration
 
+The first qualified source pair is core
+[`ae119c6`](https://github.com/luis-lobo-ar/cmdmesh/commit/ae119c647f19327998259ffbdbf863d04c453a4d)
+and integration
+[`a2c2b54`](https://github.com/luis-lobo-ar/cmdmesh-proxmox/commit/a2c2b54302bc4f53d975acea0e837092fd5ac5f9).
+That integration builds archive SHA-256
+`1f19178e5cfba8ad1d20f9b3b4c2709ffd3e7458d1aa2475efda2854a4e29016`.
+Qualification covers 37 core tests, 8 documentation checks and 80 integration
+tests, including actual cross-package lifecycle tests. It does not establish
+live infrastructure or disaster-recovery acceptance.
+
 Build and review a standalone artifact first. For Proxmox, use the builder in
 [cmdmesh-proxmox](https://github.com/luis-lobo-ar/cmdmesh-proxmox).
 Record its SHA-256. Add a dedicated provider to your private schema-1 environment.
