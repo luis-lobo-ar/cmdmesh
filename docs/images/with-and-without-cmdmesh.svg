@@ -1,0 +1,89 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1100" viewBox="0 0 1280 1100" role="img" aria-labelledby="title description">
+  <title id="title">Installing jq and htop: with and without CmdMesh</title>
+  <desc id="description">Both workflows use Ansible and require operator verification. Without CmdMesh, combine existing tools or scripts for reviewed-input checks, policy, local locking and reporting. CmdMesh supplies a common workflow for these steps. MCP offers inspection and planning; execution uses the CLI.</desc>
+  <defs>
+    <marker id="gray" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+    </marker>
+    <marker id="blue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb" />
+    </marker>
+  </defs>
+  <rect width="1280" height="1100" fill="#ffffff" />
+  <polyline stroke-width="2" stroke-linejoin="round" marker-end="url(#gray)" points="310,340 310,410" fill="none" stroke="#64748b" />
+  <polyline stroke-width="2" stroke-linejoin="round" marker-end="url(#gray)" points="310,510 310,580" fill="none" stroke="#64748b" />
+  <polyline stroke-width="2" stroke-linejoin="round" marker-end="url(#gray)" points="310,680 310,750" fill="none" stroke="#64748b" />
+  <polyline stroke-width="2" stroke-linejoin="round" marker-end="url(#blue)" points="970,340 970,410" fill="none" stroke="#2563eb" />
+  <polyline stroke-width="2" stroke-linejoin="round" marker-end="url(#blue)" points="970,510 970,580" fill="none" stroke="#2563eb" />
+  <polyline stroke-width="2" stroke-linejoin="round" marker-end="url(#blue)" points="970,680 970,750" fill="none" stroke="#2563eb" />
+  <polyline stroke-width="2" stroke-linejoin="round" marker-end="url(#gray)" points="310,850 310,890 517,890 517,930" fill="none" stroke="#64748b" />
+  <polyline stroke-width="2" stroke-linejoin="round" marker-end="url(#blue)" points="970,850 970,890 763,890 763,930" fill="none" stroke="#2563eb" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="30.0" font-weight="700" text-anchor="start" x="50.0" y="55.5" fill="#0f172a">
+    <tspan x="50.0" dy="0">Installing jq and htop on one host</tspan>
+  </text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="18.0" font-weight="400" text-anchor="start" x="50.0" y="93.7" fill="#475569">
+    <tspan x="50.0" dy="0">Both routes use Ansible. The operator drives the workflow in both cases.</tspan>
+    <tspan x="50.0" dy="25.2">Equivalent review controls shown. Direct Ansible can be enough for a single run.</tspan>
+  </text>
+  <rect stroke-width="1.5" x="50.0" y="140.0" width="520.0" height="70.0" rx="12" fill="#334155" stroke="#334155" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="20.0" font-weight="700" text-anchor="middle" x="310.0" y="168.0" fill="#ffffff">
+    <tspan x="310.0" dy="0">Without CmdMesh</tspan>
+    <tspan x="310.0" dy="28.0">You connect the workflow</tspan>
+  </text>
+  <rect stroke-width="1.5" x="710.0" y="140.0" width="520.0" height="70.0" rx="12" fill="#1d4ed8" stroke="#1d4ed8" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="20.0" font-weight="700" text-anchor="middle" x="970.0" y="168.0" fill="#ffffff">
+    <tspan x="970.0" dy="0">With CmdMesh</tspan>
+    <tspan x="970.0" dy="28.0">CmdMesh connects the workflow</tspan>
+  </text>
+  <rect stroke-width="1.5" x="50.0" y="240.0" width="520.0" height="100.0" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19.0" font-weight="400" text-anchor="middle" x="310.0" y="283.34999999999997" fill="#0f172a">
+    <tspan x="310.0" dy="0">Choose the inputs</tspan>
+    <tspan x="310.0" dy="26.599999999999998">Playbook, collection, inventory, variables</tspan>
+  </text>
+  <rect stroke-width="1.5" x="710.0" y="240.0" width="520.0" height="100.0" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19.0" font-weight="400" text-anchor="middle" x="970.0" y="283.34999999999997" fill="#0f172a">
+    <tspan x="970.0" dy="0">Choose a recipe and private target</tspan>
+    <tspan x="970.0" dy="26.599999999999998">You still own the playbook and inputs</tspan>
+  </text>
+  <rect stroke-width="1.5" x="50.0" y="410.0" width="520.0" height="100.0" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19.0" font-weight="400" text-anchor="middle" x="310.0" y="453.34999999999997" fill="#0f172a">
+    <tspan x="310.0" dy="0">Inspect and preview</tspan>
+    <tspan x="310.0" dy="26.599999999999998">Your inventory tools + Ansible --check</tspan>
+  </text>
+  <rect stroke-width="1.5" x="710.0" y="410.0" width="520.0" height="100.0" rx="12" fill="#eff6ff" stroke="#3b82f6" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19.0" font-weight="400" text-anchor="middle" x="970.0" y="453.34999999999997" fill="#0f172a">
+    <tspan x="970.0" dy="0">Inspect and preview</tspan>
+    <tspan x="970.0" dy="26.599999999999998">CmdMesh inventory + an approved Ansible check</tspan>
+  </text>
+  <rect stroke-width="1.5" x="50.0" y="580.0" width="520.0" height="100.0" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19.0" font-weight="400" text-anchor="middle" x="310.0" y="623.35" fill="#0f172a">
+    <tspan x="310.0" dy="0">Save the reviewed file versions</tspan>
+    <tspan x="310.0" dy="26.599999999999998">Recheck those versions before apply</tspan>
+  </text>
+  <rect stroke-width="1.5" x="710.0" y="580.0" width="520.0" height="100.0" rx="12" fill="#eff6ff" stroke="#3b82f6" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19.0" font-weight="400" text-anchor="middle" x="970.0" y="623.35" fill="#0f172a">
+    <tspan x="970.0" dy="0">Create and review an apply plan</tspan>
+    <tspan x="970.0" dy="26.599999999999998">CmdMesh stops if bound inputs changed</tspan>
+  </text>
+  <rect stroke-width="1.5" x="50.0" y="750.0" width="520.0" height="100.0" rx="12" fill="#f8fafc" stroke="#94a3b8" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19.0" font-weight="400" text-anchor="middle" x="310.0" y="780.05" fill="#0f172a">
+    <tspan x="310.0" dy="0">Coordinate execution and output</tspan>
+    <tspan x="310.0" dy="26.599999999999998">Wire policy, local locking, status and logs</tspan>
+    <tspan x="310.0" dy="26.599999999999998">Use scripts, CI or existing tooling</tspan>
+  </text>
+  <rect stroke-width="1.5" x="710.0" y="750.0" width="520.0" height="100.0" rx="12" fill="#eff6ff" stroke="#3b82f6" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19.0" font-weight="400" text-anchor="middle" x="970.0" y="780.05" fill="#0f172a">
+    <tspan x="970.0" dy="0">Execute the approved plan through CLI</tspan>
+    <tspan x="970.0" dy="26.599999999999998">CmdMesh checks policy and local target lock</tspan>
+    <tspan x="970.0" dy="26.599999999999998">JSON result + optional private raw logs</tspan>
+  </text>
+  <rect stroke-width="1.5" x="230.0" y="930.0" width="820.0" height="100.0" rx="12" fill="#f1f5f9" stroke="#64748b" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="21.0" font-weight="700" text-anchor="middle" x="640.0" y="972.65" fill="#0f172a">
+    <tspan x="640.0" dy="0">Both: you verify the outcome</tspan>
+    <tspan x="640.0" dy="29.4">Installed packages, host health and application checks</tspan>
+  </text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="17.0" font-weight="400" text-anchor="start" x="50.0" y="1073.45" fill="#475569">
+    <tspan x="50.0" dy="0">Equivalent workflow comparison. MCP offers inspection and planning; execution uses the CLI.</tspan>
+  </text>
+</svg>
