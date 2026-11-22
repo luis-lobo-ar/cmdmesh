@@ -7,33 +7,33 @@ policies, state, and execution evidence stay in your own private environment.
 
 ## Why CmdMesh?
 
-Operating procedures often live in scripts, command history, and instructions
-tied to one environment. Sharing a playbook still leaves someone to select the
-right inputs, review the operation, and keep its execution result.
+Suppose you want to install `jq` and `htop` on one Proxmox host.
 
-CmdMesh gives those procedures a common workflow:
+**Without CmdMesh**, you can run Ansible directly: choose a playbook, inventory,
+and variables, run `--check`, review the result, then run the approved apply and
+inspect the host. Ansible already performs the package work and reports its result.
 
-- Reuse a recipe across environments while keeping each environment's inventory,
-  variables, credentials, and permissions private.
-- Inspect infrastructure through JSON inventory and desired-state comparisons,
-  with incomplete observations explicitly reported.
-- Review a plan that identifies the target, commands, and bound inputs. Execution
-  requires that plan's digest and refuses changed bound inputs.
-- Give operators and AI clients the same inventory and planning functions through
-  CLI and MCP. Run approved operations through the CLI.
-- Keep structured execution results and, when requested, private tool output for
-  troubleshooting.
+If you also want to record exactly which files were reviewed, reject changed
+inputs before execution, enforce execution policy, and save a standard execution
+report, you must connect existing tools or maintain those checks in your own
+scripts or CI.
 
-For example, two administrators can use the same Proxmox host-baseline recipe
-with different hosts and package selections. Each keeps a private environment
-and reviews a separate plan. They share the procedure without copying credentials
-or maintaining a fork for every installation.
+**CmdMesh supplies that common workflow.** You select a recipe and a private
+target, review a plan, and execute it through the CLI. CmdMesh checks the plan's
+digest, bound inputs, execution policy, and local target lock, then returns a
+structured result. Raw tool logs are optional.
 
-Ansible still runs the playbooks. Terraform still manages the resources you
-assign to it through its separate workflow. CmdMesh adds recipe discovery,
-inventory comparison, plans tied to reviewed inputs, and approved Ansible
-execution. It fits homelab maintainers and infrastructure teams that want to
-share operating procedures and use AI for inspection and planning.
+![The same Ansible package task with and without CmdMesh: without it, the operator connects input selection, checks, review validation and execution reporting; with it, CmdMesh supplies the common review and execution workflow. Both require operator verification.](docs/images/with-and-without-cmdmesh.svg)
+
+You still supply trusted playbooks, inventory, variables, credentials, and outcome
+checks. Each environment can reuse the same recipe with its own private inputs.
+Optional MCP tools let AI clients inspect inventory and prepare plans; execution
+uses the CLI. Terraform remains a separate workflow for the resources it owns.
+
+For a single playbook run, direct Ansible can be enough. CmdMesh is useful when
+you want those review and execution checks to work consistently across recurring
+procedures, environments, operators, and AI clients. See the
+[concrete comparison](docs/why-cmdmesh.md), including what CmdMesh leaves to you.
 
 ## What is included
 
@@ -274,6 +274,7 @@ not chat messages or tool arguments. See [MCP setup and tool arguments](docs/mcp
 
 | Goal | Guide |
 | --- | --- |
+| Understand the work CmdMesh replaces and what you still own | [With and without CmdMesh](docs/why-cmdmesh.md) |
 | Find every CLI command, output, and exit code | [Command-line reference](docs/cli.md) |
 | Understand every environment field and path rule | [Configuration reference](docs/configuration.md) |
 | Write desired-state JSON and gate drift reports | [Inventory and drift](docs/drift.md) |
