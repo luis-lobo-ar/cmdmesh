@@ -56,6 +56,23 @@ A catalog has a `recipes/<name>/recipe.json` layout. `list` returns a JSON array
 of validated manifests. `inspect` returns one validated manifest. Neither executes
 recipe code or requires Ansible. Draft recipes can be inspected but not planned.
 
+## Operation discovery
+
+```text
+cmdmesh operation list --catalog DIRECTORY [--query TEXT] [--offset N] [--limit N]
+cmdmesh operation inspect ID_OR_ALIAS --catalog DIRECTORY
+cmdmesh [--config FILE] operation validate-inputs ID_OR_ALIAS --catalog DIRECTORY --inputs FILE
+cmdmesh --config FILE operation plan ID_OR_ALIAS --catalog DIRECTORY --inputs FILE --out NEW_FILE
+```
+
+Search returns compact intent matches from versioned `operation.json` sidecars.
+Inspect returns the implemented handler, typed private parameters, prerequisites,
+supported tool versions, known failures and recovery. Input validation does not
+echo values and does not evaluate remote/tool requirements. Invalid inputs print
+diagnostic codes and exit 1. Planning uses the existing bound recipe contract;
+it never executes. See [the operation guide](operations.md) for exact schema,
+pagination, colocation and compatibility behavior.
+
 ## Recipe planning
 
 ```text
@@ -102,7 +119,7 @@ cmdmesh [--config FILE] mcp
 ```
 
 This starts a newline-delimited JSON-RPC stdio server. Stdout is protocol-only.
-It exposes five read-only tools, with no execution endpoint. File paths in tool
+It exposes six read-only tools, with no execution endpoint. File paths in tool
 arguments should be absolute because the client controls the process directory.
 See [MCP configuration](mcp.md).
 

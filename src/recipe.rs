@@ -471,7 +471,7 @@ fn collect_tree(root: &Path, directory: &Path, entries: &mut BTreeMap<String, St
     }
     Ok(())
 }
-fn confined_file(root: &Path, relative: &Path) -> Result<PathBuf> {
+pub(crate) fn confined_file(root: &Path, relative: &Path) -> Result<PathBuf> {
     if relative.as_os_str().is_empty() || relative.components().any(|c| !matches!(c, Component::Normal(_))) {
         bail!("recipe paths must be relative without traversal");
     }

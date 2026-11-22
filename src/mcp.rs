@@ -1,5 +1,5 @@
 //! Thin SDK-backed MCP adapter. Execution is deliberately not a registered tool.
-use crate::{config::Environment, inventory, process, read_json, recipe};
+use crate::{config::Environment, inventory, operations, process, read_json, recipe};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use rust_mcp_sdk::{
@@ -85,9 +85,45 @@ pub struct RecipePlan {
     pub operation: String,
 }
 
+#[mcp_tool(
+    name = "cmdmesh_operation",
+    description = "Find a known task before reconstructing commands. action=list searches a local catalog (query, offset, limit); inspect returns typed inputs, prerequisites, entrypoint, failures and recovery for operation; validate-inputs checks an inputs JSON file without echoing values; plan prepares the existing static recipe plan. No execution or infrastructure mutation; requirements are declared, not automatically certified. No sessions or cleanup.",
+    read_only_hint = true,
+    destructive_hint = false,
+    idempotent_hint = true,
+    open_world_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OperationDiscovery {
+    pub action: OperationAction,
+    pub catalog: String,
+    pub operation: Option<String>,
+    pub query: Option<String>,
+    pub offset: Option<u32>,
+    pub limit: Option<u32>,
+    pub inputs: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperationAction {
+    List,
+    Inspect,
+    ValidateInputs,
+    Plan,
+}
+
 tool_box!(
     Tools,
-    [InventoryPull, DriftDetect, RecipeList, RecipeInspect, RecipePlan]
+    [
+        InventoryPull,
+        DriftDetect,
+        RecipeList,
+        RecipeInspect,
+        RecipePlan,
+        OperationDiscovery
+    ]
 );
 struct Handler {
     config: Option<PathBuf>,
@@ -120,6 +156,50 @@ impl Handler {
                     &input.target,
                     operation,
                 )?)?
+            }
+            Tools::OperationDiscovery(input) => {
+                let catalog = PathBuf::from(&input.catalog);
+                if input.action == OperationAction::List {
+                    if input.operation.is_some() || input.inputs.is_some() {
+                        anyhow::bail!("list accepts only catalog, query, offset and limit");
+                    }
+                    serde_json::to_value(operations::search(
+                        &catalog,
+                        input.query.as_deref().unwrap_or(""),
+                        input.offset.unwrap_or(0) as usize,
+                        input.limit.unwrap_or(20) as usize,
+                    )?)?
+                } else {
+                    if input.query.is_some() || input.offset.is_some() || input.limit.is_some() {
+                        anyhow::bail!("query, offset and limit apply only to list");
+                    }
+                    let operation = input.operation.context("operation is required")?;
+                    match input.action {
+                        OperationAction::Inspect => {
+                            if input.inputs.is_some() {
+                                anyhow::bail!("inspect does not accept inputs");
+                            }
+                            serde_json::to_value(operations::inspect(&catalog, &operation)?)?
+                        }
+                        OperationAction::ValidateInputs => {
+                            let values =
+                                read_json(&PathBuf::from(input.inputs.context("inputs file is required")?))?;
+                            let configured = self.config.as_deref().map(Environment::load).transpose()?;
+                            serde_json::to_value(operations::validate_inputs(
+                                &operations::inspect(&catalog, &operation)?,
+                                &values,
+                                configured.as_ref(),
+                            )?)?
+                        }
+                        OperationAction::Plan => serde_json::to_value(operations::plan(
+                            &environment()?,
+                            &catalog,
+                            &operation,
+                            &read_json(&PathBuf::from(input.inputs.context("inputs file is required")?))?,
+                        )?)?,
+                        OperationAction::List => unreachable!("list was handled above"),
+                    }
+                }
             }
         })
     }

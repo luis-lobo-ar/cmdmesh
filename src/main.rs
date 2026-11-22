@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use cmdmesh::{config::Environment, inventory, read_json, recipe, write_private_json};
+use cmdmesh::{config::Environment, inventory, operations, read_json, recipe, write_private_json};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -28,6 +28,11 @@ enum Command {
     Recipe {
         #[command(subcommand)]
         command: Recipe,
+    },
+    /// Discover a known operation and prepare its existing recipe plan.
+    Operation {
+        #[command(subcommand)]
+        command: Operations,
     },
     /// Read-only stdio MCP server; no recipe execution tool.
     Mcp,
@@ -76,6 +81,41 @@ enum Recipe {
         /// Save bounded raw tool output in a new owner-only directory.
         #[arg(long)]
         log_dir: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum Operations {
+    List {
+        #[arg(long)]
+        catalog: PathBuf,
+        #[arg(long, default_value = "")]
+        query: String,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    Inspect {
+        operation: String,
+        #[arg(long)]
+        catalog: PathBuf,
+    },
+    ValidateInputs {
+        operation: String,
+        #[arg(long)]
+        catalog: PathBuf,
+        #[arg(long)]
+        inputs: PathBuf,
+    },
+    Plan {
+        operation: String,
+        #[arg(long)]
+        catalog: PathBuf,
+        #[arg(long)]
+        inputs: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
     },
 }
 
@@ -130,6 +170,46 @@ async fn run(cli: Cli) -> Result<()> {
                 &approve_digest,
                 log_dir.as_deref(),
             )?)?,
+        },
+        Command::Operation { command } => match command {
+            Operations::List {
+                catalog,
+                query,
+                offset,
+                limit,
+            } => {
+                print_json(&operations::search(&catalog, &query, offset, limit)?)?;
+            }
+            Operations::Inspect { operation, catalog } => {
+                print_json(&operations::inspect(&catalog, &operation)?)?;
+            }
+            Operations::ValidateInputs {
+                operation,
+                catalog,
+                inputs,
+            } => {
+                let environment = cli.config.as_deref().map(Environment::load).transpose()?;
+                let report = operations::validate_inputs(
+                    &operations::inspect(&catalog, &operation)?,
+                    &read_json(&inputs)?,
+                    environment.as_ref(),
+                )?;
+                print_json(&report)?;
+                if !report.valid {
+                    anyhow::bail!("operation inputs are invalid; see diagnostic codes");
+                }
+            }
+            Operations::Plan {
+                operation,
+                catalog,
+                inputs,
+                out,
+            } => {
+                let environment = load_environment(cli.config)?;
+                let plan = operations::plan(&environment, &catalog, &operation, &read_json(&inputs)?)?;
+                write_private_json(&out, &plan)?;
+                print_json(&serde_json::json!({"digest":plan.digest,"out":out,"warning":plan.warning}))?;
+            }
         },
         Command::Mcp => cmdmesh::mcp::serve(cli.config).await?,
     }

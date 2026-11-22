@@ -700,7 +700,8 @@ fn real_stdio_mcp_handshake_lists_no_execution_and_calls_shared_drift() {
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names.len(), 5);
+    assert_eq!(names.len(), 6);
+    assert!(names.contains(&"cmdmesh_operation"));
     assert!(names.iter().all(|name| name.starts_with("cmdmesh_")));
     assert!(!names.iter().any(|n| n.contains("execute")));
     for tool in tools["result"]["tools"].as_array().unwrap() {

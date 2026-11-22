@@ -62,15 +62,17 @@ reusable function, explicit result, validation rule or behavioral regression tes
 
 ## What exists today
 
-Core source is **0.1.1**; the Proxmox integration and recipe packages are **0.1.0**.
+Core source is **0.2.0**; the Proxmox integration remains **0.1.0**. The catalog's
+new operation sidecars require core 0.2.0; existing recipe schemas remain compatible.
 See the [current CLI](cli.md) and [execution contract](execution.md).
 
 | Capability | Current status | Remaining extraction work |
 | --- | --- | --- |
 | Provider inventory and local JSON drift | Implemented, independent of Ansible | More reusable target/access diagnostics and explicit procedure discovery |
-| Recipe list, inspect and static plan | Implemented | Searchable operation knowledge, typed requirements and executable checks |
+| Recipe list, inspect and static plan | Implemented | Executable requirements and postconditions |
+| Operation discovery | Intent search, typed private target reference, supported entrypoint, known failures/recovery and bound static planning | Native inspection contracts and broader typed inputs follow the extracted capabilities |
 | Ansible check/apply runner | Implemented, execution denied by default | Broader procedure qualification and outcome evidence |
-| MCP | Five inventory/comparison/discovery/planning tools; no execution tool | Planned capability, inspection, verification and run-status coverage |
+| MCP | Six tools, including grouped operation discovery/planning; no execution tool | Planned native inspection, verification and run-status coverage |
 | Proxmox operations | API provider, eleven roles, shared operation guard and a direct-use Terraform LXC module | Audit remaining private wrappers and extract missing general behavior |
 | Catalog | Four ready entries: host baseline, backup schedule, host maintenance and LXC growth | Ready means local contract checks, not universal infrastructure qualification |
 | Persistent LXC/ZFS | Draft with no executable playbook | Agree the convention, then qualify retained-data rebuild and independent restore |
@@ -174,8 +176,8 @@ does not make the first finish line depend on a general cloud platform.
 | Phase | Status | Main owner | Depends on | Observable result |
 | --- | --- | --- | --- | --- |
 | P0: foundation | Available with current limits | Core, integration, catalog | None | Inventory, comparison, plans and Ansible execution exist |
-| P1: history/script audit | Planned next | Maintainers with private-source access | P0 | A traceable source/candidate ledger explains recurring tasks, failures and coverage gaps |
-| P2: component and discovery contracts | Planned | Core and integration maintainers | P1 | A stable operation entry describes how to perform a known task without reading its old chat |
+| P1: history/script audit | Initial selected-source audit complete; source-quality limits retained privately | Maintainers with private-source access | P0 | A traceable source/candidate ledger explains recurring tasks, failures and coverage gaps |
+| P2: component and discovery contracts | First versioned recipe-plan contract implemented | Core and integration maintainers | P1 | A stable operation entry describes how to perform a known task without reading its old chat |
 | P3: extract Proxmox primitives | Planned | Proxmox/core maintainers | P2 | High-value inspections and helpers run with explicit inputs and tested failure behavior |
 | P4: compose executable procedures | Planned | Core, integration, catalog | P3 | Recipes combine the primitives with preflight, plan, result, verification and recovery |
 | P5: qualify complete Proxmox workflows | Planned | Maintainers and environment owners | P4 | Representative baseline, capacity, maintenance and recovery procedures work end to end |
