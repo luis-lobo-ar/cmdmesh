@@ -46,6 +46,7 @@ configuration. An optional client `env` field is client-specific, not CmdMesh sy
 | `cmdmesh_recipe_list` | `{"catalog":"/opt/cmdmesh-recipes"}` | No |
 | `cmdmesh_recipe_inspect` | `{"manifest":"/opt/cmdmesh-recipes/recipes/proxmox-host-baseline/recipe.json"}` | No |
 | `cmdmesh_recipe_plan` | `{"manifest":"/opt/cmdmesh-recipes/recipes/proxmox-host-baseline/recipe.json","target":"lab","operation":"check"}` | Yes |
+| `cmdmesh_operation` | `{"action":"list","catalog":"/opt/cmdmesh-recipes","query":"host tools","offset":0,"limit":20}` | List/inspect: no; validation/planning: yes |
 
 Use absolute paths for file arguments; the client controls the server's working
 directory. Unknown argument fields are rejected. Tool results encode JSON in
@@ -56,6 +57,16 @@ the CLI; a successful tool call is not evidence of complete or healthy infrastru
 it does not execute the apply. There is no `execute`, `approve`, or `out` argument
 on this MCP tool. It returns a plan rather than writing a plan file. The CLI's
 `recipe plan --out` is the usual way to create the private file for execution.
+
+`cmdmesh_operation` groups four local actions over the same implementation as
+the CLI. `list` accepts only `catalog`, optional `query`, `offset` and `limit`.
+`inspect` takes `catalog` and `operation` (canonical ID or alias).
+`validate-inputs` and `plan` additionally require `inputs`, a private JSON file
+path. They do not accept query/pagination fields. Validation without an environment
+returns `configuration-required`; planning requires the server environment.
+The tool never echoes private input values or runs prerequisite checks. Planning
+returns an existing schema-1 recipe plan, not a file or completed execution.
+There is no `execute`, `approve` or output-path argument. See [operation discovery](operations.md).
 
 ## Use CLI and MCP together
 

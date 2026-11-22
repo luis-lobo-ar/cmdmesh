@@ -1,0 +1,36 @@
+{
+  "document_type": "cmdmesh.operation",
+  "schema_version": 1,
+  "operation_version": 1,
+  "id": "local-check",
+  "aliases": ["check local tools", "try a safe example"],
+  "title": "Check the local controller",
+  "summary": "Prepare the existing local check-mode recipe using an explicit private target.",
+  "parameters": {
+    "target": {"type": "target", "required": true, "description": "A target name from your private environment"}
+  },
+  "requirements": [
+    {"capability": "ansible-recipe", "protocol_version": 1, "supported_tools": {"ansible-core": ["2.20.4"]}}
+  ],
+  "entrypoint": {"driver": "recipe-plan", "manifest": "recipe.json", "operation": "check"},
+  "expected_results": ["A static check plan with an approval digest", "No tools run during discovery, validation or planning"],
+  "known_failures": [
+    {
+      "code": "unknown-target",
+      "summary": "The supplied name is not a private target reference",
+      "next_checks": ["Inspect targets in your private environment JSON"],
+      "recovery": ["Correct the reference and prepare a new plan"]
+    },
+    {
+      "code": "stale-plan",
+      "summary": "An input or operation instruction changed after review",
+      "next_checks": ["Compare the current recipe, operation metadata, inventory and variables"],
+      "recovery": ["Inspect the changes and create a new plan; do not reuse the old digest"]
+    }
+  ],
+  "provenance": {
+    "references": ["README.md"],
+    "qualification": "Synthetic and local-controller check-mode tests",
+    "limitations": ["This example does not qualify a remote host", "Declared tool versions and requirements are not checked during discovery"]
+  }
+}

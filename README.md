@@ -66,7 +66,9 @@ that private `lab` target already configured, an example request is:
 > Using the catalog at `/opt/cmdmesh-recipes`, find the host-baseline recipe and
 > prepare a check plan for `lab`. Do not execute it.
 
-The agent can use `cmdmesh_recipe_list`, `cmdmesh_recipe_inspect`, and
+The agent can start with `cmdmesh_operation` to search by intent, inspect typed
+inputs and known failures, then prepare the supported static plan. Existing
+clients can still use `cmdmesh_recipe_list`, `cmdmesh_recipe_inspect`, and
 `cmdmesh_recipe_plan` through MCP to discover the actual procedure and return
 a static plan for review. It does not need to invent a playbook or SSH command.
 
@@ -90,17 +92,17 @@ The goal is to turn accumulated DevOps conversations, fixes, scripts and runbook
 into reusable components, starting with Proxmox. Agents should find a tested
 procedure instead of repeatedly reconstructing how to do the task from old chats.
 
-The next planned work will:
+The initial source audit is complete within documented coverage, and versioned
+operation discovery now describes existing recipe planning. The next work will:
 
-- Audit the source history, repeated failures, existing implementations and gaps.
 - Extract target, access, controller, inspection and operation helpers with explicit
   private inputs instead of built-in environment context.
-- Make procedures discoverable by task, with supported versions, prerequisites,
-  exact entrypoints, known errors, verification and recovery guidance.
+- Extend the operation contracts with native inspections and executable requirements
+  and postconditions; current discovery does not certify prerequisites or outcomes.
 - Qualify Proxmox procedures and adopt them back into private workflows so shared
   logic is maintained in one place. Extend proven patterns into deployments later.
 
-**This is planned work, not a claim that these contracts exist today.** The
+**Those next phases remain planned work.** The
 [full extraction plan and roadmap](docs/roadmap.md) defines six core phases, a
 later deployment-extension candidate, source-coverage rules and completion gates.
 
@@ -115,8 +117,10 @@ credentials, or a private parent project to try them.
 | [cmdmesh-proxmox](https://github.com/luis-lobo-ar/cmdmesh-proxmox) | GET-only API inventory, eleven Ansible operations roles, and a separate Terraform LXC module |
 | [cmdmesh-recipes](https://github.com/luis-lobo-ar/cmdmesh-recipes) | Reviewed procedures that combine integration roles with verification and recovery instructions |
 
-Core examples target **0.1.1**, with companion Proxmox and recipe packages at
-0.1.0. CmdMesh does not download plugins during normal operations, automatically
+Core examples target **0.2.0**; the Proxmox integration remains **0.1.0**.
+Operation discovery needs a catalog revision containing `operation.json`
+sidecars. Existing schema-1 recipe commands remain compatible with older catalogs.
+CmdMesh does not download plugins during normal operations, automatically
 reconcile drift, or run Terraform apply. Execution and mutations default to
 disabled. MCP has no execution or apply tool.
 
@@ -190,6 +194,11 @@ jq -e '.complete == true and .clean == true' .generated/drift-report.json
 This example report contains synthetic data. Keep reports from real environments private.
 
 ## Run a local recipe
+
+To find a task by intent first, use
+`cmdmesh operation list --catalog examples/local --query 'local tools'`
+and inspect its supported inputs and recovery guidance.
+See [operation discovery](docs/operations.md) for the runnable example and contract.
 
 This example runs an assertion and a message on the controller. It connects to
 no remote hosts, gathers no facts, installs no packages, and requests no sudo.
@@ -334,7 +343,7 @@ configuration shape; adapt it to your client's format:
 }
 ```
 
-The five tools read inventory, compare drift, list recipes, inspect a recipe,
+The six tools discover known operations, read inventory, compare drift, list recipes, inspect a recipe,
 and prepare a static plan. **There is no MCP execution or apply tool.** Inventory
 invokes your configured trusted provider. Keep tokens in the launch environment,
 not chat messages or tool arguments. See [MCP setup and tool arguments](docs/mcp.md).

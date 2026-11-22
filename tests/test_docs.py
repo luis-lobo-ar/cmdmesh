@@ -66,6 +66,10 @@ class DocumentationExamples(unittest.TestCase):
             ("recipe", "inspect"): ("MANIFEST",),
             ("recipe", "plan"): ("--target", "--operation", "--out"),
             ("recipe", "execute"): ("--plan", "--approve-digest", "--log-dir"),
+            ("operation", "list"): ("--catalog", "--query", "--offset", "--limit"),
+            ("operation", "inspect"): ("--catalog", "OPERATION"),
+            ("operation", "validate-inputs"): ("--inputs", "--catalog"),
+            ("operation", "plan"): ("--inputs", "--catalog", "--out"),
             ("mcp",): ("--config",),
         }
         for route, flags in routes.items():
@@ -112,6 +116,40 @@ class DocumentationExamples(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["dependencies"], [])
+
+    def test_intent_discovery_prepares_a_private_static_plan(self):
+        catalog = ROOT / "examples/local"
+        found = cli("operation", "list", "--catalog", catalog, "--query", "local tools")
+        self.assertEqual(found.returncode, 0, found.stderr)
+        self.assertEqual(json.loads(found.stdout)["items"][0]["id"], "local-check")
+        inspected = cli("operation", "inspect", "check local tools", "--catalog", catalog)
+        self.assertEqual(inspected.returncode, 0, inspected.stderr)
+        entry = json.loads(inspected.stdout)
+        self.assertEqual(entry["parameters"]["target"]["type"], "target")
+        self.assertEqual(entry["entrypoint"]["operation"], "check")
+        generated = ROOT / ".generated"
+        generated.mkdir(mode=0o700, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="operations-docs-", dir=generated) as directory:
+            private = Path(directory)
+            (private / "inventory.yml").write_text("demo ansible_connection=local\n")
+            config = private / "environment.json"
+            config.write_text(json.dumps({"schema_version": 1, "targets": {"local": {
+                "inventory": "inventory.yml", "limit": "demo", "lifecycle_owner": "ansible"}}}))
+            inputs = catalog / "operation-inputs.json"
+            validated = cli("--config", config, "operation", "validate-inputs", "local-check",
+                            "--catalog", catalog, "--inputs", inputs)
+            self.assertEqual(validated.returncode, 0, validated.stderr)
+            self.assertFalse(json.loads(validated.stdout)["requirements_evaluated"])
+            plan = private / "check.plan.json"
+            prepared = cli("--config", config, "operation", "plan", "local-check",
+                           "--catalog", catalog, "--inputs", inputs, "--out", plan)
+            self.assertEqual(prepared.returncode, 0, prepared.stderr)
+            self.assertEqual(plan.stat().st_mode & 0o777, 0o600)
+            value = json.loads(plan.read_text())
+            self.assertEqual(value["operation"], "check")
+            self.assertIn("--check", value["commands"][0]["argv"])
+            self.assertEqual(value["target"], "local")
+            self.assertFalse((private / "execution.json").exists())
 
     def test_local_check_has_private_output_and_cannot_apply(self):
         generated = ROOT / ".generated"

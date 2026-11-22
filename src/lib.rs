@@ -2,6 +2,7 @@
 pub mod config;
 pub mod inventory;
 pub mod mcp;
+pub mod operations;
 mod process;
 pub mod recipe;
 
