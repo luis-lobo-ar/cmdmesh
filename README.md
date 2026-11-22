@@ -84,6 +84,26 @@ a sandbox for that client. See [MCP setup and tool arguments](docs/mcp.md).
 See the [concrete comparison](docs/why-cmdmesh.md) for the direct Ansible path and
 the responsibilities that stay with you.
 
+## Where the project is going
+
+The goal is to turn accumulated DevOps conversations, fixes, scripts and runbooks
+into reusable components, starting with Proxmox. Agents should find a tested
+procedure instead of repeatedly reconstructing how to do the task from old chats.
+
+The next planned work will:
+
+- Audit the source history, repeated failures, existing implementations and gaps.
+- Extract target, access, controller, inspection and operation helpers with explicit
+  private inputs instead of built-in environment context.
+- Make procedures discoverable by task, with supported versions, prerequisites,
+  exact entrypoints, known errors, verification and recovery guidance.
+- Qualify Proxmox procedures and adopt them back into private workflows so shared
+  logic is maintained in one place. Extend proven patterns into deployments later.
+
+**This is planned work, not a claim that these contracts exist today.** The
+[full extraction plan and roadmap](docs/roadmap.md) defines six core phases, a
+later deployment-extension candidate, source-coverage rules and completion gates.
+
 ## What is included
 
 Start with the offline examples below. You do not need Proxmox, cloud access,
@@ -323,6 +343,7 @@ not chat messages or tool arguments. See [MCP setup and tool arguments](docs/mcp
 
 | Goal | Guide |
 | --- | --- |
+| See the extraction process, Proxmox milestones and deployment extension | [Extraction plan and roadmap](docs/roadmap.md) |
 | Understand the work CmdMesh replaces and what you still own | [With and without CmdMesh](docs/why-cmdmesh.md) |
 | Find every CLI command, output, and exit code | [Command-line reference](docs/cli.md) |
 | Understand every environment field and path rule | [Configuration reference](docs/configuration.md) |
