@@ -1,5 +1,5 @@
 //! Thin SDK-backed MCP adapter. Execution is deliberately not a registered tool.
-use crate::{config::Environment, inventory, operations, process, read_json, recipe};
+use crate::{config::Environment, inspection, inventory, operations, process, read_json, recipe};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use rust_mcp_sdk::{
@@ -28,6 +28,30 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 #[serde(deny_unknown_fields)]
 pub struct InventoryPull {
     pub provider: String,
+}
+#[mcp_tool(
+    name = "cmdmesh_inspection",
+    description = "Use action=describe with an inspector ID to discover a configured pinned integration's finite inspections and typed inputs. action=run requires operation and inputs (a private JSON file containing that action's input object). Runs bounded read-only probes through the same CLI transport. Inspect result.outcome and diagnostics; observed is scoped evidence, not mutation authority or application health. No repairs, apply, sessions or cleanup commands. timeout_seconds is optional, 1..120.",
+    read_only_hint = true,
+    destructive_hint = false,
+    idempotent_hint = true,
+    open_world_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Inspection {
+    pub action: InspectionAction,
+    pub inspector: String,
+    pub operation: Option<String>,
+    pub inputs: Option<String>,
+    pub timeout_seconds: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum InspectionAction {
+    Describe,
+    Run,
 }
 #[mcp_tool(
     name = "cmdmesh_drift_detect",
@@ -122,7 +146,8 @@ tool_box!(
         RecipeList,
         RecipeInspect,
         RecipePlan,
-        OperationDiscovery
+        OperationDiscovery,
+        Inspection
     ]
 );
 struct Handler {
@@ -133,6 +158,27 @@ impl Handler {
     fn call(&self, tool: Tools) -> Result<Value> {
         let environment = || Environment::load(self.config.as_ref().context("server --config required")?);
         Ok(match tool {
+            Tools::Inspection(input) => {
+                let (operation, value) = match input.action {
+                    InspectionAction::Describe => {
+                        if input.operation.is_some() || input.inputs.is_some() {
+                            anyhow::bail!("describe takes no operation or inputs");
+                        }
+                        ("describe".to_owned(), serde_json::json!({}))
+                    }
+                    InspectionAction::Run => (
+                        input.operation.context("run requires operation")?,
+                        read_json(&PathBuf::from(input.inputs.context("run requires inputs file")?))?,
+                    ),
+                };
+                serde_json::to_value(inspection::run(
+                    &environment()?,
+                    &input.inspector,
+                    &operation,
+                    value,
+                    input.timeout_seconds.unwrap_or(120).into(),
+                )?)?
+            }
             Tools::InventoryPull(input) => {
                 serde_json::to_value(inventory::pull(&environment()?, &input.provider)?)?
             }
@@ -246,9 +292,9 @@ pub async fn serve(config: Option<PathBuf>) -> Result<()> {
         Environment::load(path)?;
     }
     let details = InitializeResult {
-        server_info:Implementation { name:"cmdmesh".into(), version:env!("CARGO_PKG_VERSION").into(), title:Some("CmdMesh".into()), description:Some("Read-only infrastructure inventory and static recipe planning".into()), icons:vec![], website_url:None },
+        server_info:Implementation { name:"cmdmesh".into(), version:env!("CARGO_PKG_VERSION").into(), title:Some("CmdMesh".into()), description:Some("Read-only infrastructure inventory, pinned inspections and static recipe planning".into()), icons:vec![], website_url:None },
         capabilities:ServerCapabilities { tools:Some(ServerCapabilitiesTools { list_changed:None }), ..Default::default() },
-        meta:None, instructions:Some("No recipe execution or apply tool is exposed. Inventory invokes only configured integrations. Treat output as private operational information.".into()), protocol_version:ProtocolVersion::V2025_11_25.into(),
+        meta:None, instructions:Some("No recipe execution or apply tool is exposed. Inventory and inspections invoke only explicitly configured integrations. Inspect result.outcome and diagnostics; an observed result is scoped evidence, not mutation authority or application health. Treat output as private operational information.".into()), protocol_version:ProtocolVersion::V2025_11_25.into(),
     };
     let transport = StdioTransport::new(TransportOptions::default())
         .map_err(|_| anyhow::anyhow!("cannot initialize MCP stdio transport"))?;

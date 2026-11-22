@@ -10,7 +10,7 @@ use std::{
         process::CommandExt,
     },
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, Instant},
@@ -73,7 +73,23 @@ pub(crate) struct RunSpec<'a> {
     pub logs: Option<StreamLogs>,
 }
 
-pub(crate) fn run(mut spec: RunSpec<'_>) -> Result<Vec<u8>> {
+pub(crate) struct RunOutput {
+    pub stdout: Vec<u8>,
+    pub status: ExitStatus,
+}
+
+pub(crate) fn run(spec: RunSpec<'_>) -> Result<Vec<u8>> {
+    let output = capture(spec)?;
+    if !output.status.success() {
+        bail!(
+            "child operation failed (exit {:?}); raw output withheld",
+            output.status.code()
+        );
+    }
+    Ok(output.stdout)
+}
+
+pub(crate) fn capture(mut spec: RunSpec<'_>) -> Result<RunOutput> {
     if cancelled() {
         bail!("operation cancelled before execution");
     }
@@ -197,13 +213,10 @@ pub(crate) fn run(mut spec: RunSpec<'_>) -> Result<Vec<u8>> {
         &mut diagnostics,
         spec.logs.as_mut().map(|logs| &mut logs.stderr),
     )?;
-    if !status.success() {
-        bail!(
-            "child operation failed (exit {:?}); raw output withheld",
-            status.code()
-        );
-    }
-    Ok(output)
+    Ok(RunOutput {
+        stdout: output,
+        status,
+    })
 }
 
 fn nonblocking(stream: &impl AsRawFd) -> Result<()> {

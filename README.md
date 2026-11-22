@@ -92,12 +92,14 @@ The goal is to turn accumulated DevOps conversations, fixes, scripts and runbook
 into reusable components, starting with Proxmox. Agents should find a tested
 procedure instead of repeatedly reconstructing how to do the task from old chats.
 
-The initial source audit is complete within documented coverage, and versioned
-operation discovery now describes existing recipe planning. The next work will:
+The initial source audit is complete within documented coverage. Versioned
+operation discovery describes existing recipe planning. Pinned native inspections
+now expose target matching, evidence comparison and controller/access diagnosis
+through the shared CLI/MCP transport. See [native inspections](docs/inspections.md).
+The remaining work will:
 
-- Extract target, access, controller, inspection and operation helpers with explicit
-  private inputs instead of built-in environment context.
-- Extend the operation contracts with native inspections and executable requirements
+- Complete qualification of extracted helpers with explicit private inputs.
+- Extend operation contracts with executable requirements
   and postconditions; current discovery does not certify prerequisites or outcomes.
 - Qualify Proxmox procedures and adopt them back into private workflows so shared
   logic is maintained in one place. Extend proven patterns into deployments later.
@@ -343,8 +345,9 @@ configuration shape; adapt it to your client's format:
 }
 ```
 
-The six tools discover known operations, read inventory, compare drift, list recipes, inspect a recipe,
-and prepare a static plan. **There is no MCP execution or apply tool.** Inventory
+The seven tools discover known operations, run pinned native inspections, read
+inventory, compare drift, list recipes, inspect a recipe and prepare a static plan.
+**There is no MCP apply tool.** Inventory
 invokes your configured trusted provider. Keep tokens in the launch environment,
 not chat messages or tool arguments. See [MCP setup and tool arguments](docs/mcp.md).
 
@@ -355,6 +358,7 @@ not chat messages or tool arguments. See [MCP setup and tool arguments](docs/mcp
 | See the extraction process, Proxmox milestones and deployment extension | [Extraction plan and roadmap](docs/roadmap.md) |
 | Understand the work CmdMesh replaces and what you still own | [With and without CmdMesh](docs/why-cmdmesh.md) |
 | Find every CLI command, output, and exit code | [Command-line reference](docs/cli.md) |
+| Discover and run pinned read-only integration actions | [Native inspections](docs/inspections.md) |
 | Understand every environment field and path rule | [Configuration reference](docs/configuration.md) |
 | Write desired-state JSON and gate drift reports | [Inventory and drift](docs/drift.md) |
 | Connect Proxmox, use recipes, and separate Terraform ownership | [Proxmox guide](docs/proxmox.md) |
