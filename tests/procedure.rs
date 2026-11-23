@@ -399,9 +399,11 @@ Path(c['calls']).open('a').write(phase+'\n')
 outcome='observed';diagnostics=[]
 if phase=='verify' and c['mode']=='hold-postcheck':
  import time
+ time.sleep(4) # Exercise slow startup before the observable postcheck event.
  Path(c['post_started']).touch()
- for _ in range(500):
-  if Path(c['post_release']).exists():break
+ deadline=time.monotonic()+90
+ while not Path(c['post_release']).exists():
+  if time.monotonic()>=deadline:raise RuntimeError('synthetic postcheck gate timed out')
   time.sleep(0.01)
 if phase=='verify':
  a['driver']=None;a['references'].pop('ansible-executable')
@@ -687,23 +689,26 @@ fn cli_procedure_plans_execute_only_by_digest_and_return_negative_outcomes_nonze
 
 #[test]
 fn physical_subject_lock_remains_held_through_independent_postchecks() {
-    use std::{thread, time::Duration};
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
     let (dir, environment, parameters, state) = executor_fixture("hold-postcheck");
     let first = procedure::plan(&environment, "native", parameters.clone(), &state).unwrap();
     let second = procedure::plan(&environment, "native", parameters, &state).unwrap();
     let active = thread::spawn(move || procedure::execute(&first, &first.digest));
     let ready = dir.path().join("post-started");
-    for _ in 0..300 {
-        if ready.exists() {
-            break;
-        }
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !ready.exists() && !active.is_finished() && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(10));
     }
-    let reached = ready.exists();
+    if !ready.exists() {
+        fs::write(dir.path().join("post-release"), b"release").unwrap();
+        panic!("executor did not reach postcheck: {:?}", active.join().unwrap());
+    }
     let blocked = procedure::execute(&second, &second.digest);
     fs::write(dir.path().join("post-release"), b"release").unwrap();
     let result = active.join().unwrap().unwrap();
-    assert!(reached);
     assert!(blocked.is_err());
     assert_eq!(result.outcome, procedure::Outcome::Verified);
     assert_eq!(
