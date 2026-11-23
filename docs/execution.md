@@ -119,5 +119,6 @@ After any uncertain outcome:
 
 CmdMesh does not offer generic exactly-once execution or automatic rollback.
 Local tests do not qualify live host changes or backup restoration.
-See [verified procedure foundations](verified-procedures.md) for the separate,
-unfinished memory-profile envelope. Its guarantees do not apply to Plan1.
+See [the verified memory procedure](verified-procedures.md) for the separate
+fixed envelope with independent postchecks and once-only intent. Its guarantees
+do not apply to Plan1.

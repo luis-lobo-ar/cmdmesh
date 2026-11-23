@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use cmdmesh::{
-    config::Environment, inspection, inventory, operations, read_json, recipe, write_private_json,
+    config::Environment, inspection, inventory, operations, procedure, read_json, recipe, write_private_json,
 };
 use std::path::PathBuf;
 
@@ -19,6 +19,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Plan and execute the fixed verified owned-memory procedure.
+    Procedure {
+        #[command(subcommand)]
+        command: Procedure,
+    },
     /// Invoke a configured pinned inspection integration. No apply action.
     Inspection {
         #[command(subcommand)]
@@ -41,7 +46,7 @@ enum Command {
         #[command(subcommand)]
         command: Operations,
     },
-    /// Read-only stdio MCP server; no recipe execution tool.
+    /// Inspection and planning MCP server; no execution tool.
     Mcp,
 }
 #[derive(Subcommand)]
@@ -49,6 +54,34 @@ enum Inventory {
     Pull {
         #[arg(long)]
         provider: String,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+}
+#[derive(Subcommand)]
+enum Procedure {
+    Describe,
+    Plan {
+        #[arg(long)]
+        inspector: String,
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        state_directory: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    Execute {
+        #[arg(long)]
+        plan: PathBuf,
+        #[arg(long)]
+        approve_digest: String,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    Status {
+        #[arg(long)]
+        plan: PathBuf,
         #[arg(long)]
         out: Option<PathBuf>,
     },
@@ -160,6 +193,52 @@ async fn main() {
 async fn run(cli: Cli) -> Result<()> {
     cmdmesh::mcp::install_cancellation_handlers();
     match cli.command {
+        Command::Procedure { command } => match command {
+            Procedure::Describe => print_json(&procedure::describe())?,
+            Procedure::Plan {
+                inspector,
+                input,
+                state_directory,
+                out,
+            } => {
+                let plan = procedure::plan(
+                    &load_environment(cli.config)?,
+                    &inspector,
+                    read_json(&input)?,
+                    &state_directory,
+                )?;
+                write_private_json(&out, &plan)?;
+                print_json(
+                    &serde_json::json!({"digest":plan.digest,"out":out,"retained_plan":plan.context_directory.join("plan.json"),"warning":"Review the exact subject, memory, permissions and bindings. A consumed plan cannot be replayed; status is historical."}),
+                )?;
+            }
+            Procedure::Execute {
+                plan,
+                approve_digest,
+                out,
+            } => {
+                let result = procedure::execute(&read_json(&plan)?, &approve_digest)?;
+                if let Some(out) = out {
+                    write_private_json(&out, &result)?;
+                } else {
+                    print_json(&result)?;
+                }
+                if !matches!(
+                    result.outcome,
+                    procedure::Outcome::Verified | procedure::Outcome::Checked
+                ) {
+                    anyhow::bail!("procedure did not verify; inspect retained result and phase diagnostics");
+                }
+            }
+            Procedure::Status { plan, out } => {
+                let result = procedure::status(&read_json(&plan)?)?;
+                if let Some(out) = out {
+                    write_private_json(&out, &result)?;
+                } else {
+                    print_json(&result)?;
+                }
+            }
+        },
         Command::Inspection { command } => {
             let (inspector, operation, input, timeout_seconds, out) = match command {
                 Inspection::Describe {

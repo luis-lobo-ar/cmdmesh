@@ -62,8 +62,8 @@ reusable function, explicit result, validation rule or behavioral regression tes
 
 ## What exists today
 
-Core source is **0.2.0**. The Proxmox collection retains **0.1.0**; its new native
-inspector reports **0.2.0** and uses a separately pinned archive. The catalog's
+Core source is **0.3.0**. The Proxmox collection is **0.2.1**; its native
+inspector reports **0.4.0** and uses a separately pinned archive. The catalog's
 operation sidecars require core 0.2.0; existing recipe schemas remain compatible.
 See the [current CLI](cli.md) and [execution contract](execution.md).
 
@@ -72,13 +72,13 @@ See the [current CLI](cli.md) and [execution contract](execution.md).
 | Provider inventory and local JSON drift | Implemented, independent of Ansible | Independently qualify API visibility in private workflows |
 | Recipe list, inspect and static plan | Implemented | Executable requirements and postconditions |
 | Operation discovery | Intent search, typed private target reference, supported entrypoint, known failures/recovery and bound static planning | Broader procedure inputs and executable requirements |
-| Native inspections | Five typed Proxmox actions, mandatory executable pin, captured code, structured receipts and diagnostic guidance | Connect live evidence to executable procedure preflight and postconditions |
+| Native inspections | Seven typed Proxmox actions, pinned code, live memory phases and diagnostic receipts | Broaden qualified profiles without weakening their identity/source contracts |
 | Ansible check/apply runner | Implemented, execution denied by default | Broader procedure qualification and outcome evidence |
-| MCP | Seven read-only tools, including grouped operation discovery and native inspections; no apply tool | Verified-procedure and run-status coverage |
+| MCP | Eight tools including procedure describe/plan/historical-status; no apply tool; planning effects declared | Catalog composition and private workflow qualification |
 | Proxmox operations | API provider, eleven roles, shared guard, native target/comparison/controller/SSH/TLS inspections and direct-use Terraform LXC module | Qualify real workflows before replacing private wrappers |
 | Catalog | Four ready entries: host baseline, backup schedule, host maintenance and LXC growth | Ready means local contract checks, not universal infrastructure qualification |
 | Persistent LXC/ZFS | Draft with no executable playbook | Agree the convention, then qualify retained-data rebuild and independent restore |
-| Result/log handling | Local execution status/logs plus native inspection receipts, explicit negative outcomes and recovery guidance | Correlated mutation/verification evidence and explicit uncertainty |
+| Result/log handling | Memory procedure binds intent, native/controlled facts, independent postchecks and once-only consumption; Plan1 remains command-only | Real workflow and recovery qualification |
 | Native Terraform execution in CmdMesh | Not implemented; direct Terraform is documented | Consider a driver only when an audited procedure needs it and its contract is reviewed |
 
 ## The extraction method
@@ -181,7 +181,7 @@ does not make the first finish line depend on a general cloud platform.
 | P1: history/script audit | Initial selected-source audit complete; source-quality limits retained privately | Maintainers with private-source access | P0 | A traceable source/candidate ledger explains recurring tasks, failures and coverage gaps |
 | P2: component and discovery contracts | First versioned recipe-plan contract implemented | Core and integration maintainers | P1 | A stable operation entry describes how to perform a known task without reading its old chat |
 | P3: extract Proxmox primitives | First selected batch implemented and qualified in synthetic/CI tests | Proxmox/core maintainers | P2 | Five standalone actions and shared CLI/MCP transport run with explicit inputs and tested failure behavior |
-| P4: compose executable procedures | Planned | Core, integration, catalog | P3 | Recipes combine the primitives with preflight, plan, result, verification and recovery |
+| P4: compose executable procedures | Memory core implemented; catalog composition/qualification in progress | Core, integration, catalog | P3 | Preflight, plan, guarded mutation, independent verification and recovery evidence |
 | P5: qualify complete Proxmox workflows | Planned | Maintainers and environment owners | P4 | Representative baseline, capacity, maintenance and recovery procedures work end to end |
 | P6: agent evaluation and private adoption | Planned | Core/catalog maintainers and consumers | P5 | A fresh agent and a second private installation reuse the procedures without historical context |
 | P7: deployment-strategy extraction | Candidate extension | Core/integration maintainers and deployment owners | P6 and explicit scope selection | One real rollout pattern is generalized and qualified before adding more backends |

@@ -125,6 +125,22 @@ must be outside bound input trees. Raw streams can contain secrets and are never
 printed in the normal CLI result. Without this option, raw streams are discarded.
 See [failure and logging semantics](execution.md).
 
+## Verified memory procedure
+
+```text
+cmdmesh procedure describe
+cmdmesh --config FILE procedure plan --inspector ID --input FILE --state-directory DIR --out FILE
+cmdmesh procedure execute --plan FILE --approve-digest DIGEST [--out FILE]
+cmdmesh procedure status --plan FILE [--out FILE]
+```
+
+This is the fixed owned-LXC memory profile, separate from Plan1. Planning reads
+current state and writes private frozen context. Execution requires the reviewed
+digest and original private permissions, consumes intent before dispatch and
+checks independent postconditions. It emits JSON and exits1 for rejected,
+unverified or uncertain outcomes. Status reads historical evidence; its exit0
+does not establish health or completion. See [inputs, evidence and recovery](verified-procedures.md).
+
 ## MCP
 
 ```text
@@ -132,7 +148,9 @@ cmdmesh [--config FILE] mcp
 ```
 
 This starts a newline-delimited JSON-RPC stdio server. Stdout is protocol-only.
-It exposes seven read-only tools, with no mutation execution endpoint. File paths in tool
+It exposes eight tools, with no mutation execution endpoint. Procedure planning
+writes private local artifacts and reads remote state; its hints reflect that.
+File paths in tool
 arguments should be absolute because the client controls the process directory.
 See [MCP configuration](mcp.md).
 

@@ -1,5 +1,5 @@
 //! Thin SDK-backed MCP adapter. Execution is deliberately not a registered tool.
-use crate::{config::Environment, inspection, inventory, operations, process, read_json, recipe};
+use crate::{config::Environment, inspection, inventory, operations, procedure, process, read_json, recipe};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use rust_mcp_sdk::{
@@ -138,6 +138,32 @@ pub enum OperationAction {
     Plan,
 }
 
+#[mcp_tool(
+    name = "cmdmesh_procedure",
+    description = "Use action=describe for the fixed owned-LXC memory profile. plan requires inspector, inputs (private parameters JSON file), and state_directory (existing owner-only durable directory). Planning reads current remote state and writes a private frozen plan/context, but does not mutate infrastructure. status requires only plan (retained plan JSON path) and reads historical evidence, not current health. Consumed plans cannot be replayed. No execute/apply action; reviewed execution is CLI-only.",
+    read_only_hint = false,
+    destructive_hint = false,
+    idempotent_hint = false,
+    open_world_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProcedureDiscovery {
+    pub action: ProcedureAction,
+    pub inspector: Option<String>,
+    pub inputs: Option<String>,
+    pub state_directory: Option<String>,
+    pub plan: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProcedureAction {
+    Describe,
+    Plan,
+    Status,
+}
+
 tool_box!(
     Tools,
     [
@@ -147,7 +173,8 @@ tool_box!(
         RecipeInspect,
         RecipePlan,
         OperationDiscovery,
-        Inspection
+        Inspection,
+        ProcedureDiscovery
     ]
 );
 struct Handler {
@@ -158,6 +185,44 @@ impl Handler {
     fn call(&self, tool: Tools) -> Result<Value> {
         let environment = || Environment::load(self.config.as_ref().context("server --config required")?);
         Ok(match tool {
+            Tools::ProcedureDiscovery(input) => match input.action {
+                ProcedureAction::Describe => {
+                    if input.inspector.is_some()
+                        || input.inputs.is_some()
+                        || input.state_directory.is_some()
+                        || input.plan.is_some()
+                    {
+                        anyhow::bail!("procedure describe takes no other parameters");
+                    }
+                    procedure::describe()
+                }
+                ProcedureAction::Plan => {
+                    if input.plan.is_some() {
+                        anyhow::bail!("procedure plan does not accept an existing plan");
+                    }
+                    serde_json::to_value(procedure::plan(
+                        &environment()?,
+                        &input.inspector.context("procedure plan requires inspector")?,
+                        read_json(&PathBuf::from(
+                            input.inputs.context("procedure plan requires inputs file")?,
+                        ))?,
+                        &PathBuf::from(
+                            input
+                                .state_directory
+                                .context("procedure plan requires state_directory")?,
+                        ),
+                    )?)?
+                }
+                ProcedureAction::Status => {
+                    if input.inspector.is_some() || input.inputs.is_some() || input.state_directory.is_some()
+                    {
+                        anyhow::bail!("procedure status takes only a plan file");
+                    }
+                    serde_json::to_value(procedure::status(&read_json(&PathBuf::from(
+                        input.plan.context("procedure status requires plan file")?,
+                    ))?)?)?
+                }
+            },
             Tools::Inspection(input) => {
                 let (operation, value) = match input.action {
                     InspectionAction::Describe => {
@@ -292,9 +357,9 @@ pub async fn serve(config: Option<PathBuf>) -> Result<()> {
         Environment::load(path)?;
     }
     let details = InitializeResult {
-        server_info:Implementation { name:"cmdmesh".into(), version:env!("CARGO_PKG_VERSION").into(), title:Some("CmdMesh".into()), description:Some("Read-only infrastructure inventory, pinned inspections and static recipe planning".into()), icons:vec![], website_url:None },
+        server_info:Implementation { name:"cmdmesh".into(), version:env!("CARGO_PKG_VERSION").into(), title:Some("CmdMesh".into()), description:Some("Infrastructure inventory, pinned inspections and private recipe/procedure planning".into()), icons:vec![], website_url:None },
         capabilities:ServerCapabilities { tools:Some(ServerCapabilitiesTools { list_changed:None }), ..Default::default() },
-        meta:None, instructions:Some("No recipe execution or apply tool is exposed. Inventory and inspections invoke only explicitly configured integrations. Inspect result.outcome and diagnostics; an observed result is scoped evidence, not mutation authority or application health. Treat output as private operational information.".into()), protocol_version:ProtocolVersion::V2025_11_25.into(),
+        meta:None, instructions:Some("No execution or apply tool is exposed. Procedure planning reads configured integrations and writes private frozen local context/evidence; it does not mutate infrastructure. Other inventory/inspections invoke only explicitly configured integrations. Inspect outcome and diagnostics; observations are scoped evidence, not mutation authority or application health. Procedure status is historical. Treat output as private operational information.".into()), protocol_version:ProtocolVersion::V2025_11_25.into(),
     };
     let transport = StdioTransport::new(TransportOptions::default())
         .map_err(|_| anyhow::anyhow!("cannot initialize MCP stdio transport"))?;

@@ -1,4 +1,4 @@
-//! Shared operations for the CLI and read-only MCP adapter.
+//! Shared operations for the CLI and inspection/planning MCP adapter.
 pub mod config;
 pub mod inspection;
 pub mod inventory;

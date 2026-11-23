@@ -700,15 +700,16 @@ fn real_stdio_mcp_handshake_lists_no_execution_and_calls_shared_drift() {
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names.len(), 7);
+    assert_eq!(names.len(), 8);
     assert!(names.contains(&"cmdmesh_inspection"));
     assert!(names.contains(&"cmdmesh_operation"));
     assert!(names.iter().all(|name| name.starts_with("cmdmesh_")));
     assert!(!names.iter().any(|n| n.contains("execute")));
     for tool in tools["result"]["tools"].as_array().unwrap() {
-        assert_eq!(tool["annotations"]["readOnlyHint"], true);
+        let writes_private_context = tool["name"] == "cmdmesh_procedure";
+        assert_eq!(tool["annotations"]["readOnlyHint"], !writes_private_context);
         assert_eq!(tool["annotations"]["destructiveHint"], false);
-        assert_eq!(tool["annotations"]["idempotentHint"], true);
+        assert_eq!(tool["annotations"]["idempotentHint"], !writes_private_context);
     }
     request(
         json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cmdmesh_drift_detect","arguments":{"desired":desired,"inventory":inventory}}}),

@@ -1,75 +1,126 @@
-# Verified procedure foundations
+# Verify owned LXC memory growth
 
-This work is under development. There is no procedure execute command or MCP
-apply tool. Existing Recipe1/Plan1 execution still reports command completion,
-not verified infrastructure outcomes.
+Use this profile to grow one explicitly owned running LXC and verify both its
+configured memory and enforced cgroup limit. CmdMesh collects fresh evidence,
+freezes intent, runs one guarded Ansible mutation and independently checks the
+result. It does not infer success from an Ansible exit code.
 
-The first profile is `proxmox-lxc-memory`, version1: grow one explicitly owned
-running LXC's memory ceiling. The Proxmox inspector supplies read-only prepare,
-preflight and verify phases; its guarded Ansible module independently checks
-identity, baseline and capacity before one digest-guarded change. A zero command
-exit alone cannot verify a procedure.
+This first bounded procedure is `proxmox-lxc-memory`, profile version1. It does
+not qualify swap, shrinking, restarts, application health or arbitrary Proxmox
+versions. Real disposable growth and recovery qualification remain a separate
+milestone. Existing Recipe1/Plan1 results retain command-completion semantics.
 
-## Assessment boundary
+## Prepare private inputs
 
-Core's experimental `procedure` library parses the fixed composition contract:
-exact profile/version/phase, prepared-body hash and subject, required boolean
-check IDs, referenced files and a bounded driver transport. Prepare/preflight
-require all checks; verification retains trustworthy false postchecks. The
-native inspector remains responsible for the domain evidence schema, live
-collection and authenticated identity. Parsing caller JSON is not live evidence
-or change authority. The future envelope must obtain the assessment through the
-configured, SHA-pinned inspection transport and bind it to the reviewed plan.
+Copy the [environment template](../examples/procedure/environment.json) and
+[memory parameters](../examples/procedure/memory-parameters.json). Replace their
+documentation values with qualified node identity, ownership/generation tags,
+tool paths and trust files. Obtain fingerprints over an already trusted channel;
+never disable TLS or SSH verification. Create the inspector's owner-only scratch
+directory before planning.
 
-## Singleton execution context
+Configure the matching reviewed `cmdmesh-proxmox` package and SHA-pinned native
+inspector supporting `lxc-memory-procedure` profile1. Its `inspection describe`
+response supplies the full native request schema and supported versions. The
+Ansible path in `controller.tools` must select the environment's actual Ansible.
+Runtime interpreters and installed dependencies remain trusted code.
 
-The context builder compares the environment-selected Ansible executable and
-referenced file bytes, then captures the actual collection's mutation module and
-both helpers and checks those bytes against the bundled inspector profile. It
-copies exactly those three files into a private minimal collection. Original
-action plugins and routing metadata cannot intercept the fixed module. Tests
-also exercise a duplicate collection on the trusted tool's Python search path.
-The builder writes only into a new, empty, owner-only directory outside the
-source package tree. Tool runtimes remain trusted; this is not a Python sandbox.
+The templates disable execution and mutations. Enable only intended permissions
+in your private environment before planning; CmdMesh never changes them. An
+unchanged target needs execution permission but no mutation permission. Capacity
+reserve is your policy, checked against fresh reported available memory; it is
+not a reservation of future capacity.
 
-Generated inputs contain exactly one literal host, a fixed direct-SSH policy,
-root identity, explicit known-hosts/key/executable paths, no become, fixed Python
-and the unchanged prepared intent. The generated one-step Recipe1 invokes only
-`cmdmesh.proxmox.lxc_memory`. Legacy target groups, dynamic inventories and vars
-are not imported. Private keys are referenced, not copied. Execution permission,
-mutation permission, timeout and environment allowlist retain their original
-values. The source environment is not rewritten.
+## Review and run
 
-Plan1 binds this generated recipe, inventory, vars, derived environment and
-minimal collection tree. Adding even an unused plugin to that frozen tree
-invalidates the plan. The future outer plan must additionally bind the original
-environment, inspector/configuration, assessment and reference files. A caller
-that invokes only the context builder has not implemented those outer guarantees.
-Trusted tool runtimes and Ansible dependencies remain trusted executable code.
+From your private operations project, with new output filenames:
 
-## Still required
+```bash
+install -d -m 700 .generated/procedure-state
+cmdmesh --config environment.json procedure plan \
+  --inspector proxmox-inspector \
+  --input memory-parameters.json \
+  --state-directory .generated/procedure-state \
+  --out memory-plan.json
+```
 
-The experimental local journal now provides stable physical-subject file locks
-and exclusive consumed intents. The configured state root must already be an
-owned private directory. Controllers using the same directory coordinate by
-subject key, independently of display aliases; other directories or machines do
-not share that lock. Lock files are never unlinked. A terminated local lock owner
-releases its lock without making remote completion known.
+Planning reads remote state and writes an owner-only frozen context; it does not
+mutate the guest. Review the exact subject, desired memory, policy, bindings,
+driver and digest in the plan. Then supply that reviewed digest:
 
-An intent is created only while holding its subject guard. Its bytes and parent
-directory are synced before the method returns. Any existing entry, including
-partial JSON or a dangling symlink, prevents replay. A write/sync error leaves
-the entry in place and must prevent dispatch. This requires a filesystem that
-honors file and directory sync. Operators must retain the state directory and
-provide its durable parent path; deleting state is not a recovery operation.
-These primitives are not yet wired into an executor and do not authorize changes.
+```bash
+cmdmesh procedure execute --plan memory-plan.json \
+  --approve-digest REVIEWED_PLAN_DIGEST
+cmdmesh procedure status --plan memory-plan.json
+```
 
-The bounded envelope must add approval binding, stable-subject locking, durable
-once-only intent before dispatch, fresh preflight, typed command facts,
-independent postchecks and retained phase receipts. Unknown command completion
-must remain unknown even when later checks pass. No automatic retry, shrink,
-restart or rollback belongs to this profile.
+Execution exits0 only for `checked` or `verified`. Rejected, unverified or uncertain
+results are JSON with exit1. Status exits0 when it reads a valid historical
+result, including an uncertain one; inspect its outcome rather than treating
+the exit code as health.
 
-Catalog/CLI/MCP composition, real disposable growth and independent restore,
-fresh-operator qualification and private adoption remain separate milestones.
-Local fixture and inventory tests do not qualify live mutations or recovery.
+## Boundaries and evidence
+
+The outer plan binds the original environment/provider configuration/artifact,
+assessment, references, original driver files, frozen inspector and generated
+Plan1 context. It fingerprints the running CmdMesh executable; a changed binary
+requires a new plan. CLI and MCP share that implementation. Parsing caller JSON
+alone never establishes live evidence or mutation authority.
+
+The private context has one literal host, fixed direct SSH, explicit root/key/
+known-hosts/executable, no become and fixed Python. Legacy inventories and vars
+are not imported. Keys are referenced, never copied. Only three captured,
+verified driver/helper files form the minimal collection. Original action
+plugins/routing cannot intercept it; later plugin additions invalidate the plan.
+
+Execution checks policy, approval and inputs under a physical-subject lock,
+recollects preflight without rewriting intent, and durably consumes the plan
+immediately before dispatch. The guarded module independently checks identity,
+baseline and capacity and uses the Proxmox configuration digest.
+
+The fixed playbook retains filtered native command facts privately, even when
+the module fails, then asserts module success. Controlled-Ansible completion and
+native mutation facts remain separate. Missing, malformed or unknown native
+facts cannot yield verified, even with passing postchecks. Raw module messages
+are excluded from this facts artifact.
+
+| Outcome | Meaning |
+| --- | --- |
+| `checked` | Fresh preflight confirms the unchanged target; no mutation dispatched |
+| `rejected` | Preflight did not qualify before dispatch |
+| `verified` | Controlled invocation and native mutation succeeded; required fresh postchecks passed |
+| `unverified` | Known command facts and current evidence did not establish the complete procedure |
+| `uncertain` | Completion, source, subject or retained final evidence is unknown |
+
+`planned` and `pending` describe incomplete retained progress. A preflight
+receipt proves neither controller liveness nor terminal rejection. Every result
+is historical (`current_observation:false`). Passing checks after an unknown
+mutation cannot establish command completion.
+
+The context retains `plan.json`, `prepare.json`, `preflight.json`, private native
+facts, `command.json`, `verify.json`, `result.json` and bounded private driver logs
+as each stage completes. Raw logs may contain secrets. Failed preparation keeps
+its diagnostic receipt and reports its path. Frozen inspector/configuration
+supports attempted postchecks after original artifact loss. A command-evidence
+write failure still attempts the postcheck and cannot produce a verified result.
+
+## Recovery and limits
+
+Controllers sharing one owner-only durable state directory coordinate by physical
+subject key, independently of aliases. Other directories/machines do not share
+the lock. Lock files are never unlinked. Intent bytes and directory entries are
+synced before dispatch; this requires a filesystem honoring sync and a durably
+provisioned parent path. Tests do not qualify hardware power-loss recovery.
+
+Retain state. A consumed plan cannot run again, including after interruption or
+missing final reporting. Inspect receipts and actual state, then make a new plan
+only after reconciliation. No automatic retry, shrink, restart or rollback is
+provided. Killing local SSH does not prove the remote command stopped.
+
+MCP exposes describe/plan/status through `cmdmesh_procedure`, with no execute
+action. Planning writes private artifacts and reads remote state, reflected in
+its hints. See [the MCP guide](mcp.md).
+
+Catalog composition, real disposable growth and independent restore,
+fresh-operator evaluation and private adoption remain separate work. Local
+fixtures do not complete those milestones.

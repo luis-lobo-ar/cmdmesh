@@ -363,3 +363,451 @@ fn actual_ansible_cannot_intercept_the_fixed_module_with_extra_collection_plugin
             .exists());
     }
 }
+
+fn executor_fixture(mode: &str) -> (tempfile::TempDir, Environment, Value, std::path::PathBuf) {
+    let (temp, _, mut assessment) = fixture();
+    let dir = temp.path();
+    let marker = dir.join("desired");
+    let count = dir.join("dispatch-count");
+    let script=format!("#!/usr/bin/python3\nimport sys\nfrom pathlib import Path\np=Path({count:?});p.write_text(p.read_text()+'x' if p.exists() else 'x')\nmode={mode:?}\nif mode not in ('no-change','failure'): Path({marker:?}).touch()\nif mode=='report-failure':\n v=next(v for v in sys.argv if v.startswith('@'))\n (Path(v[1:]).parent.parent/'driver-logs'/'execution.json').touch()\nif mode in ('final-failure','command-failure'):\n v=next(v for v in sys.argv if v.startswith('@'))\n (Path(v[1:]).parent.parent/('result.json' if mode=='final-failure' else 'command.json')).mkdir()\nif mode=='delete-source': Path({inspector:?}).unlink()\nif mode=='unknown':\n import os,signal;os.kill(os.getpid(),signal.SIGKILL)\nsys.exit(2 if mode.startswith('failure') else 0)\n",count=count.to_string_lossy(),marker=marker.to_string_lossy(),inspector=dir.join("inspector").to_string_lossy());
+    let facts_code="import json,hashlib\nv=next(v for v in sys.argv if v.startswith('@'))\np=json.loads(Path(v[1:]).read_text())['cmdmesh_memory_prepared']\nfacts={'document_type':'cmdmesh.proxmox.lxc-memory.driver-facts','schema_version':1,'prepared_sha256':hashlib.sha256(json.dumps(p,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),'subject_key':p['subject_key'],'command_outcome':'unknown' if mode=='driver-unknown' else ('failed' if mode.startswith('failure') else 'succeeded'),'mutation_attempted':True,'module_failed':mode.startswith('failure') or mode=='driver-unknown'}\nif mode=='driver-malformed': facts['subject_key']='wrong'\nif mode!='driver-missing':\n target=Path(v[1:]).parent/'driver-facts.json';target.write_text(json.dumps(facts));target.chmod(0o600)\n";
+    let script = script
+        .replace(
+            "if mode=='report-failure':",
+            &format!("{facts_code}if mode=='report-failure':"),
+        )
+        .replace(
+            "sys.exit(2 if mode.startswith('failure') else 0)",
+            "sys.exit(2 if mode.startswith('failure') or mode=='driver-unknown' else 0)",
+        );
+    fs::write(dir.join("ansible"), script).unwrap();
+    let hash = procedure::fingerprint(&dir.join("ansible")).unwrap();
+    assessment["driver"]["executable_sha256"] = json!(hash);
+    assessment["references"]["ansible-executable"]["sha256"] = json!(hash);
+    assessment["prepared"]["capacity_policy"] =
+        json!({"mode":"observed-available-headroom","minimum_remaining_bytes":0});
+    if mode == "noop" {
+        assessment["prepared"]["change_required"] = json!(false);
+    }
+    assessment["prepared_sha256"] = json!(procedure::json_fingerprint(&assessment["prepared"]).unwrap());
+    let inspector = dir.join("inspector");
+    fs::write(&inspector,r#"#!/usr/bin/python3
+import copy,json,sys
+from pathlib import Path
+r=json.load(sys.stdin);c=r['config'];phase=r['input']['phase'];a=copy.deepcopy(c['assessment']);a['phase']=phase
+Path(c['calls']).open('a').write(phase+'\n')
+outcome='observed';diagnostics=[]
+if phase=='verify' and c['mode']=='hold-postcheck':
+ import time
+ Path(c['post_started']).touch()
+ for _ in range(500):
+  if Path(c['post_release']).exists():break
+  time.sleep(0.01)
+if phase=='verify':
+ a['driver']=None;a['references'].pop('ansible-executable')
+ a['checks'].pop('configuration-preimage');a['checks'].pop('capacity-headroom')
+ for key in ('configuration-target','enforced-memory-target','configuration-digest-transition'):a['checks'][key]=Path(c['desired']).exists()
+ if c['mode']=='wrong-subject':a['subject_key']='b'*64
+ if not all(a['checks'].values()):outcome='incomplete'
+if (phase=='prepare' and c['mode']=='prepare-reject') or (phase=='preflight' and c['mode']=='preflight-reject') or (phase=='verify' and c['mode']=='lost-source'):
+ a={};outcome='unavailable'
+if outcome!='observed':diagnostics=[{'code':'synthetic-unqualified','summary':'Synthetic negative case','next_checks':['Inspect fixture'],'recovery':['Reconcile without retry']}]
+print(json.dumps({'document_type':'cmdmesh.inspection.result','schema_version':1,'operation':r['operation'],'outcome':outcome,'data':a,'diagnostics':diagnostics}))
+sys.exit(0 if outcome=='observed' else 1)
+"#).unwrap();
+    fs::set_permissions(&inspector, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut config: Value = serde_json::from_slice(&fs::read(dir.join("environment.json")).unwrap()).unwrap();
+    config["execution"]["allow_execution"] = json!(true);
+    config["execution"]["allow_mutations"] = json!(true);
+    config["providers"] = json!({"native":{"executable":inspector,"expected_sha256":procedure::fingerprint(&inspector).unwrap(),"config":{"assessment":assessment,"desired":marker,"calls":dir.join("calls"),"mode":mode,"post_started":dir.join("post-started"),"post_release":dir.join("post-release")}}});
+    save(&dir.join("environment.json"), &config);
+    let environment = Environment::load(&dir.join("environment.json")).unwrap();
+    let parameters = json!({"request":assessment["prepared"]["request"],"desired_memory_mb":512,"capacity_policy":assessment["prepared"]["capacity_policy"]});
+    let state = dir.join("state");
+    fs::create_dir(&state).unwrap();
+    fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
+    (temp, environment, parameters, state)
+}
+
+#[test]
+fn fixed_executor_distinguishes_actual_postconditions_from_command_facts() {
+    for (mode, wanted) in [
+        ("success", "verified"),
+        ("no-change", "unverified"),
+        ("failure", "unverified"),
+        ("failure-changed", "unverified"),
+        ("unknown", "uncertain"),
+        ("driver-unknown", "uncertain"),
+        ("driver-missing", "uncertain"),
+        ("driver-malformed", "uncertain"),
+        ("lost-source", "uncertain"),
+        ("wrong-subject", "uncertain"),
+        ("noop", "checked"),
+        ("preflight-reject", "rejected"),
+        ("report-failure", "verified"),
+        ("delete-source", "verified"),
+    ] {
+        let (dir, environment, parameters, state) = executor_fixture(mode);
+        let plan = procedure::plan(&environment, "native", parameters, &state).unwrap();
+        let result = procedure::execute(&plan, &plan.digest).unwrap();
+        assert_eq!(
+            serde_json::to_value(&result).unwrap()["outcome"],
+            wanted,
+            "{mode}"
+        );
+        assert!(!result.current_observation);
+        assert_eq!(procedure::status(&plan).unwrap().outcome, result.outcome);
+        if mode == "unknown" {
+            assert_eq!(result.postconditions_satisfied, Some(true));
+        }
+        if ["noop", "preflight-reject"].contains(&mode) {
+            assert!(!dir.path().join("dispatch-count").exists());
+        } else {
+            assert_eq!(
+                fs::read_to_string(dir.path().join("dispatch-count")).unwrap(),
+                "x"
+            );
+        }
+        assert!(
+            procedure::execute(&plan, &plan.digest).is_err(),
+            "{mode} plan must not run again"
+        );
+    }
+}
+
+#[test]
+fn drift_approval_lock_and_consumed_intent_stop_before_dispatch() {
+    for mode in ["approval", "identity", "source", "lock", "consumed"] {
+        let (dir, environment, parameters, state) = executor_fixture("success");
+        let plan = procedure::plan(&environment, "native", parameters, &state).unwrap();
+        let journal = procedure::Journal::open(&state).unwrap();
+        let held = if mode == "lock" {
+            Some(journal.lock(&plan.assessment.subject_key).unwrap())
+        } else {
+            None
+        };
+        if mode == "identity" {
+            fs::write(dir.path().join("identity"), b"changed").unwrap();
+        }
+        if mode == "source" {
+            fs::write(dir.path().join("inspector"), b"changed").unwrap();
+        }
+        if mode == "consumed" {
+            journal
+                .lock(&plan.assessment.subject_key)
+                .unwrap()
+                .consume(&plan.digest)
+                .unwrap();
+        }
+        let approval = if mode == "approval" { "wrong" } else { &plan.digest };
+        assert!(procedure::execute(&plan, approval).is_err(), "{mode}");
+        assert!(!dir.path().join("dispatch-count").exists(), "{mode}");
+        drop(held);
+    }
+}
+
+#[test]
+fn missing_final_report_does_not_erase_consumption_or_enable_replay() {
+    let (dir, environment, parameters, state) = executor_fixture("final-failure");
+    let plan = procedure::plan(&environment, "native", parameters, &state).unwrap();
+    assert!(procedure::execute(&plan, &plan.digest).is_err());
+    assert!(procedure::Journal::open(&state)
+        .unwrap()
+        .consumed(&plan.digest)
+        .unwrap());
+    let status = procedure::status(&plan).unwrap();
+    assert_eq!(serde_json::to_value(status).unwrap()["outcome"], "uncertain");
+    assert!(procedure::execute(&plan, &plan.digest).is_err());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("dispatch-count")).unwrap(),
+        "x"
+    );
+}
+
+#[test]
+fn unchanged_intent_does_not_require_mutation_permission() {
+    let (_dir, environment, parameters, state) = executor_fixture("noop");
+    let mut config: Value = serde_json::from_slice(&fs::read(&environment.path).unwrap()).unwrap();
+    config["execution"]["allow_mutations"] = json!(false);
+    save(&environment.path, &config);
+    let plan = procedure::plan(&environment, "native", parameters, &state).unwrap();
+    let result = procedure::execute(&plan, &plan.digest).unwrap();
+    assert_eq!(serde_json::to_value(result).unwrap()["outcome"], "checked");
+}
+
+#[test]
+fn status_after_an_incomplete_predispatch_assessment_does_not_claim_ready() {
+    let (_dir, environment, parameters, state) = executor_fixture("noop");
+    let plan = procedure::plan(&environment, "native", parameters, &state).unwrap();
+    fs::write(plan.context_directory.join("preflight.json"), b"partial").unwrap();
+    assert!(procedure::execute(&plan, &plan.digest).is_err());
+    assert_eq!(
+        serde_json::to_value(procedure::status(&plan).unwrap()).unwrap()["outcome"],
+        "pending"
+    );
+}
+
+#[test]
+fn failed_command_evidence_retention_still_attempts_independent_postcheck() {
+    let (dir, environment, parameters, state) = executor_fixture("command-failure");
+    let plan = procedure::plan(&environment, "native", parameters, &state).unwrap();
+    assert!(procedure::execute(&plan, &plan.digest).is_err());
+    assert!(fs::read_to_string(dir.path().join("calls"))
+        .unwrap()
+        .contains("verify"));
+    assert!(plan.context_directory.join("verify.json").is_file());
+    assert!(procedure::Journal::open(&state)
+        .unwrap()
+        .consumed(&plan.digest)
+        .unwrap());
+    assert!(procedure::execute(&plan, &plan.digest).is_err());
+}
+
+#[test]
+fn failed_preparation_retains_the_native_diagnostic_receipt() {
+    let (_dir, environment, parameters, state) = executor_fixture("prepare-reject");
+    let error = procedure::plan(&environment, "native", parameters, &state).unwrap_err();
+    assert!(error.to_string().contains("receipt"));
+    let retained = fs::read_dir(state.join("plans"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let receipt: Value = serde_json::from_slice(&fs::read(retained.join("prepare.json")).unwrap()).unwrap();
+    assert_eq!(
+        receipt["result"]["diagnostics"][0]["code"],
+        "synthetic-unqualified"
+    );
+}
+
+#[test]
+fn actual_ansible_retains_unknown_native_facts_without_returning_raw_module_output() {
+    let Some(ansible) = std::env::var_os("CMDMESH_TEST_ANSIBLE") else {
+        return;
+    };
+    let ansible = Path::new(&ansible).to_path_buf();
+    let (temp, _environment, mut value) = fixture();
+    let dir = temp.path();
+    let module =
+        dir.join("package/ansible/ansible_collections/cmdmesh/proxmox/plugins/modules/lxc_memory.py");
+    fs::write(&module,"#!/usr/bin/python\nfrom ansible.module_utils.basic import AnsibleModule\nm=AnsibleModule(argument_spec={'prepared':{'type':'dict','required':True},'allow_changes':{'type':'bool'}})\nm.fail_json(msg='SYNTHETIC_SENSITIVE_RESULT',changed=True,command_outcome='unknown',mutation_attempted=True)\n").unwrap();
+    value["profile_files"]["ansible/ansible_collections/cmdmesh/proxmox/plugins/modules/lxc_memory.py"] =
+        json!(procedure::fingerprint(&module).unwrap());
+    let mut config: Value = serde_json::from_slice(&fs::read(dir.join("environment.json")).unwrap()).unwrap();
+    config["execution"]["ansible_executable"] = json!(ansible);
+    config["execution"]["allow_execution"] = json!(true);
+    config["execution"]["allow_mutations"] = json!(true);
+    save(&dir.join("environment.json"), &config);
+    value["driver"]["executable"] = json!(ansible);
+    value["driver"]["executable_sha256"] = json!(procedure::fingerprint(Path::new(&ansible)).unwrap());
+    value["references"]["ansible-executable"] =
+        json!({"path":ansible,"sha256":procedure::fingerprint(Path::new(&ansible)).unwrap()});
+    let environment = Environment::load(&dir.join("environment.json")).unwrap();
+    let assessed = procedure::Assessment::parse(value, "prepare").unwrap();
+    let context = dir.join("context");
+    fs::create_dir(&context).unwrap();
+    fs::set_permissions(&context, fs::Permissions::from_mode(0o700)).unwrap();
+    let original = procedure::prepare_context(&environment, &assessed, &context).unwrap();
+    let inventory = context.join("inventory.json");
+    let mut values: Value = serde_json::from_slice(&fs::read(&inventory).unwrap()).unwrap();
+    values["all"]["hosts"]["cmdmesh_subject"]["ansible_connection"] = json!("local");
+    save(&inventory, &values);
+    let derived = Environment::load(&original.environment).unwrap();
+    let local = cmdmesh::recipe::plan(
+        &derived,
+        &original.manifest,
+        "subject",
+        cmdmesh::recipe::Operation::Apply,
+    )
+    .unwrap();
+    assert!(cmdmesh::recipe::execute(&local, &local.digest).is_err());
+    let facts = fs::read_to_string(context.join("driver-facts.json")).unwrap();
+    assert!(!facts.contains("SYNTHETIC_SENSITIVE_RESULT"));
+    let facts: Value = serde_json::from_str(&facts).unwrap();
+    assert_eq!(facts["command_outcome"], "unknown");
+    assert_eq!(facts["mutation_attempted"], true);
+    assert_eq!(facts["module_failed"], true);
+}
+
+#[test]
+fn cli_procedure_plans_execute_only_by_digest_and_return_negative_outcomes_nonzero() {
+    for (mode, outcome, success) in [
+        ("success", "verified", true),
+        ("no-change", "unverified", false),
+        ("driver-unknown", "uncertain", false),
+    ] {
+        let (dir, environment, parameters, state) = executor_fixture(mode);
+        let input = dir.path().join("parameters.json");
+        save(&input, &parameters);
+        let output = dir.path().join("plan.json");
+        let prepared = std::process::Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+            .arg("--config")
+            .arg(&environment.path)
+            .args(["procedure", "plan", "--inspector", "native", "--input"])
+            .arg(&input)
+            .arg("--state-directory")
+            .arg(&state)
+            .arg("--out")
+            .arg(&output)
+            .output()
+            .unwrap();
+        assert!(
+            prepared.status.success(),
+            "{}",
+            String::from_utf8_lossy(&prepared.stderr)
+        );
+        let plan: Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+        assert_eq!(fs::metadata(&output).unwrap().permissions().mode() & 0o077, 0);
+        let executed = std::process::Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+            .args(["procedure", "execute", "--plan"])
+            .arg(&output)
+            .arg("--approve-digest")
+            .arg(plan["digest"].as_str().unwrap())
+            .output()
+            .unwrap();
+        assert_eq!(
+            executed.status.success(),
+            success,
+            "{mode}:{}",
+            String::from_utf8_lossy(&executed.stderr)
+        );
+        let report: Value = serde_json::from_slice(&executed.stdout).unwrap();
+        assert_eq!(report["outcome"], outcome);
+        let historical = std::process::Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+            .args(["procedure", "status", "--plan"])
+            .arg(&output)
+            .output()
+            .unwrap();
+        assert!(historical.status.success());
+        let historical: Value = serde_json::from_slice(&historical.stdout).unwrap();
+        assert_eq!(historical, report);
+    }
+}
+
+#[test]
+fn physical_subject_lock_remains_held_through_independent_postchecks() {
+    use std::{thread, time::Duration};
+    let (dir, environment, parameters, state) = executor_fixture("hold-postcheck");
+    let first = procedure::plan(&environment, "native", parameters.clone(), &state).unwrap();
+    let second = procedure::plan(&environment, "native", parameters, &state).unwrap();
+    let active = thread::spawn(move || procedure::execute(&first, &first.digest));
+    let ready = dir.path().join("post-started");
+    for _ in 0..300 {
+        if ready.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    let reached = ready.exists();
+    let blocked = procedure::execute(&second, &second.digest);
+    fs::write(dir.path().join("post-release"), b"release").unwrap();
+    let result = active.join().unwrap().unwrap();
+    assert!(reached);
+    assert!(blocked.is_err());
+    assert_eq!(result.outcome, procedure::Outcome::Verified);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("dispatch-count")).unwrap(),
+        "x"
+    );
+}
+
+#[test]
+fn mcp_procedure_prepares_the_same_cli_consumable_plan_but_has_no_execute_action() {
+    use std::{
+        io::{BufRead, BufReader, Write},
+        process::{Command, Stdio},
+        sync::mpsc,
+        thread,
+        time::Duration,
+    };
+    let (dir, environment, parameters, state) = executor_fixture("success");
+    let input = dir.path().join("parameters.json");
+    save(&input, &parameters);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+        .arg("--config")
+        .arg(&environment.path)
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if tx.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    let mut request = |value: Value| {
+        writeln!(stdin, "{value}").unwrap();
+        stdin.flush().unwrap();
+    };
+    let receive =
+        || serde_json::from_str::<Value>(&rx.recv_timeout(Duration::from_secs(15)).unwrap()).unwrap();
+    request(
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"procedure-test","version":"1"}}}),
+    );
+    receive();
+    request(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
+    request(json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}));
+    let tools = receive();
+    let tool = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "cmdmesh_procedure")
+        .unwrap();
+    assert_eq!(tool["annotations"]["readOnlyHint"], false);
+    assert_eq!(tool["annotations"]["destructiveHint"], false);
+    assert_eq!(tool["annotations"]["openWorldHint"], true);
+    request(
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cmdmesh_procedure","arguments":{"action":"describe"}}}),
+    );
+    let description = receive();
+    let description: Value =
+        serde_json::from_str(description["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    let cli_description = Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+        .args(["procedure", "describe"])
+        .output()
+        .unwrap();
+    assert!(cli_description.status.success());
+    assert_eq!(
+        description,
+        serde_json::from_slice::<Value>(&cli_description.stdout).unwrap()
+    );
+    request(
+        json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"cmdmesh_procedure","arguments":{"action":"plan","inspector":"native","inputs":input,"state_directory":state}}}),
+    );
+    let planned = receive();
+    let plan: Value =
+        serde_json::from_str(planned["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    request(
+        json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"cmdmesh_procedure","arguments":{"action":"execute","approve_digest":plan["digest"]}}}),
+    );
+    let denied = receive();
+    assert!(denied["error"].is_object() || denied["result"]["isError"] == true);
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let retained = Path::new(plan["context_directory"].as_str().unwrap()).join("plan.json");
+    let executed = Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+        .args(["procedure", "execute", "--plan"])
+        .arg(retained)
+        .arg("--approve-digest")
+        .arg(plan["digest"].as_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        executed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&executed.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&executed.stdout).unwrap()["outcome"],
+        "verified"
+    );
+}

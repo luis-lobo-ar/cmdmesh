@@ -52,6 +52,12 @@ parts for its supported operations.
 | Give an AI client access | Use its terminal capability or an existing adapter | Use CmdMesh's inventory/planning MCP tools; approved execution remains a CLI operation |
 | Verify and recover | Check the host and application; follow your recovery procedure | You still do those checks and follow the recipe's recovery instructions |
 
+That comparison describes the host-baseline Recipe1 example. The first bounded
+[memory procedure](verified-procedures.md) also collects live preflight and
+postconditions automatically, records native mutation uncertainty separately
+from Ansible completion and prevents replay of a consumed intent. Application
+health and recovery remain separate qualification.
+
 The diagram compares equivalent workflows. It does not mean you must build a
 custom system before using Ansible. If your existing automation already provides
 these checks, you can keep using it. CmdMesh offers a common implementation that

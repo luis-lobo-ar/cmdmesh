@@ -1,7 +1,7 @@
 # MCP guide
 
 CmdMesh's optional MCP server shares the CLI's inventory, comparison, validation,
-and static planning functions. It uses stdio, not HTTP, SSE, or a listening port.
+and recipe/procedure planning functions. It uses stdio, not HTTP, SSE, or a listening port.
 There is no MCP execution tool, even when CLI execution is enabled in configuration.
 
 ## Configure a client
@@ -48,6 +48,7 @@ configuration. An optional client `env` field is client-specific, not CmdMesh sy
 | `cmdmesh_recipe_plan` | `{"manifest":"/opt/cmdmesh-recipes/recipes/proxmox-host-baseline/recipe.json","target":"lab","operation":"check"}` | Yes |
 | `cmdmesh_operation` | `{"action":"list","catalog":"/opt/cmdmesh-recipes","query":"host tools","offset":0,"limit":20}` | List/inspect: no; validation/planning: yes |
 | `cmdmesh_inspection` | `{"action":"describe","inspector":"proxmox-inspector"}` | Yes |
+| `cmdmesh_procedure` | `{"action":"describe"}` | Plan: yes; describe/status: no |
 
 Use absolute paths for file arguments; the client controls the server's working
 directory. Unknown argument fields are rejected. Tool results encode JSON in
@@ -76,6 +77,17 @@ captured executable, bounded transport and receipt as the CLI. Inspect
 `result.outcome`; a valid negative result is returned with diagnostics.
 See [the inspection guide](inspections.md) for configuration and exact protocol.
 
+`cmdmesh_procedure` accepts `describe` with no other fields. `plan` requires
+`inspector`, `inputs` (private memory parameters JSON path) and `state_directory`
+(existing owner-only durable path). It returns a bound procedure plan and retains
+`context_directory/plan.json`, which the CLI can consume with the reviewed digest.
+`status` accepts only `plan`, the retained plan JSON path. It reads historical
+evidence and does not reobserve infrastructure. See [the memory procedure](verified-procedures.md).
+
+Procedure planning reads remote state and writes private local artifacts. Its
+grouped tool therefore advertises `readOnlyHint:false`, `idempotentHint:false`,
+`destructiveHint:false`, and `openWorldHint:true`. There is no execute action.
+
 ## Use CLI and MCP together
 
 Use MCP for interactive discovery and inspection. Use the CLI for repeatable
@@ -84,7 +96,7 @@ commands are not instructions for the server to run automatically.
 
 Enabling `execution.allow_execution` or `allow_mutations` does not add an MCP
 tool. A client with a separate terminal tool has its own authority boundary;
-CmdMesh's read-only MCP is not a sandbox for that client's other capabilities.
+CmdMesh's MCP is not a sandbox for that client's other capabilities.
 
 The server can read paths available to its OS process and invokes configured
 trusted providers. Read-only annotations are not per-client authentication,
