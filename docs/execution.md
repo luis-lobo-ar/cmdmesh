@@ -91,6 +91,13 @@ Deleting local logs does not undo remote operations.
 not prove that remote work stopped or rolled back. A missing report also leaves
 the outcome unknown. Inspect the actual target before retrying.
 
+Internally the shared executor retains typed controlled-process facts: success,
+an ordinary nonzero exit, or unknown completion after a signal, deadline,
+cancellation or supervision failure. Reserved timeout/signal-style statuses
+124, 137 and 143 remain unknown conservatively. These facts do not establish
+remote postconditions. The existing Plan 1 report and CLI error behavior stay
+unchanged; they do not expose a verified-procedure result or authorize a retry.
+
 Local scratch directories are owner-only and are removed after execution.
 The managed SSH defaults do not use multiplexing sockets, so long private
 directory paths do not require a system-temp socket fallback. This costs an

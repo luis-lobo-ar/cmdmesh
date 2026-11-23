@@ -91,6 +91,20 @@ pub struct ExecutionReport {
     pub log_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Completion {
+    Succeeded,
+    Failed { exit_code: i32 },
+    Unknown,
+}
+
+pub(crate) struct ExecutionAttempt {
+    pub report: ExecutionReport,
+    pub completion: Completion,
+    pub reporting_error: Option<anyhow::Error>,
+    error: Option<anyhow::Error>,
+}
+
 pub fn inspect(manifest: &Path) -> Result<Recipe> {
     if fs::symlink_metadata(manifest)?.file_type().is_symlink() {
         bail!("recipe manifest cannot be a symlink");
@@ -266,6 +280,23 @@ pub fn execute(plan: &Plan, approval: &str) -> Result<ExecutionReport> {
 }
 
 pub fn execute_with_logs(plan: &Plan, approval: &str, log_dir: Option<&Path>) -> Result<ExecutionReport> {
+    let attempt = execute_attempt(plan, approval, log_dir)?;
+    if let Some(error) = attempt.reporting_error.or(attempt.error) {
+        return Err(error);
+    }
+    match attempt.completion {
+        Completion::Succeeded => Ok(attempt.report),
+        Completion::Failed { .. } | Completion::Unknown => {
+            bail!("child completion unavailable; remote outcome may be unknown")
+        }
+    }
+}
+
+pub(crate) fn execute_attempt(
+    plan: &Plan,
+    approval: &str,
+    log_dir: Option<&Path>,
+) -> Result<ExecutionAttempt> {
     if approval != plan.digest {
         bail!("approval digest does not match plan");
     }
@@ -316,6 +347,7 @@ pub fn execute_with_logs(plan: &Plan, approval: &str, log_dir: Option<&Path>) ->
         status: "failed".into(),
         log_dir,
     };
+    let mut completion = Completion::Unknown;
     let result = (|| -> Result<()> {
         for (index, command) in plan.commands.iter().enumerate() {
             let logs = report
@@ -329,7 +361,7 @@ pub fn execute_with_logs(plan: &Plan, approval: &str, log_dir: Option<&Path>) ->
                 })
                 .transpose()?;
             let args: Vec<OsString> = command.argv.iter().map(OsString::from).collect();
-            process::run(process::RunSpec {
+            let output = process::capture(process::RunSpec {
                 program: &command.executable,
                 args: &args,
                 input: None,
@@ -341,18 +373,34 @@ pub fn execute_with_logs(plan: &Plan, approval: &str, log_dir: Option<&Path>) ->
                 ansible_config: Some(&plan.ansible_config),
                 logs,
             })?;
+            if !output.status.success() {
+                completion = match output.status.code() {
+                    Some(code) if ![124, 137, 143].contains(&code) => Completion::Failed { exit_code: code },
+                    _ => Completion::Unknown,
+                };
+                bail!(
+                    "child operation failed (exit {:?}); raw output withheld",
+                    output.status.code()
+                );
+            }
             report.completed_steps += 1;
         }
         Ok(())
     })();
     if result.is_ok() {
         report.status = "succeeded".into();
+        completion = Completion::Succeeded;
     }
-    if let Some(directory) = &report.log_dir {
-        write_private_json(&directory.join("execution.json"), &report)?;
-    }
-    result?;
-    Ok(report)
+    let reporting_error = report
+        .log_dir
+        .as_ref()
+        .and_then(|directory| write_private_json(&directory.join("execution.json"), &report).err());
+    Ok(ExecutionAttempt {
+        report,
+        completion,
+        reporting_error,
+        error: result.err(),
+    })
 }
 
 fn create_log_dir(path: &Path, plan: &Plan) -> Result<PathBuf> {
@@ -486,4 +534,104 @@ pub(crate) fn confined_file(root: &Path, relative: &Path) -> Result<PathBuf> {
         bail!("recipe path must identify a regular file");
     }
     Ok(path)
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn fixture(script: &str) -> (tempfile::TempDir, Plan) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(".generated/recipe-completion-tests");
+        fs::create_dir_all(&root).unwrap();
+        let temporary = tempfile::tempdir_in(root).unwrap();
+        let dir = temporary.path();
+        fs::create_dir(dir.join("recipe")).unwrap();
+        fs::write(dir.join("inventory.ini"), "node_a\n").unwrap();
+        fs::write(
+            dir.join("recipe/playbook.yml"),
+            "---\n- hosts: node_a\n  tasks: []\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("recipe/README.md"),
+            "Inspect actual state after failure.\n",
+        )
+        .unwrap();
+        fs::write(dir.join("driver"), format!("#!/bin/sh\n{script}\n")).unwrap();
+        fs::set_permissions(dir.join("driver"), fs::Permissions::from_mode(0o700)).unwrap();
+        write_private_json(
+            &dir.join("recipe/recipe.json"),
+            &serde_json::json!({
+                "schema_version":1,"id":"memory","title":"Memory","summary":"Fixture only",
+                "status":"ready","requirements":[],"dependencies":[],
+                "steps":[{"id":"grow","driver":"ansible","playbook":"playbook.yml"}],
+                "verification":[],"recovery":"README.md"
+            }),
+        )
+        .unwrap();
+        write_private_json(&dir.join("environment.json"), &serde_json::json!({
+            "schema_version":1,"targets":{"test":{"inventory":"inventory.ini","limit":"node_a","lifecycle_owner":"ansible"}},
+            "execution":{"allow_execution":true,"allow_mutations":true,"ansible_executable":"driver","timeout_seconds":1}
+        })).unwrap();
+        let environment = Environment::load(&dir.join("environment.json")).unwrap();
+        let plan = plan(
+            &environment,
+            &dir.join("recipe/recipe.json"),
+            "test",
+            Operation::Apply,
+        )
+        .unwrap();
+        (temporary, plan)
+    }
+
+    #[test]
+    fn controlled_completion_preserves_distinct_success_failure_and_unknown_facts() {
+        for (script, expected, completed) in [
+            ("exit 0", Completion::Succeeded, 1),
+            ("exit 2", Completion::Failed { exit_code: 2 }, 0),
+            ("exit 124", Completion::Unknown, 0),
+            ("kill -KILL $$", Completion::Unknown, 0),
+            ("sleep 5", Completion::Unknown, 0),
+        ] {
+            let (_directory, plan) = fixture(script);
+            let attempt = execute_attempt(&plan, &plan.digest, None).unwrap();
+            assert_eq!(attempt.completion, expected, "{script}");
+            assert_eq!(attempt.report.completed_steps, completed);
+            assert_eq!(
+                attempt.report.status == "succeeded",
+                expected == Completion::Succeeded
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_approval_or_disabled_execution_never_becomes_an_attempt() {
+        let (_directory, plan) = fixture("exit 0");
+        assert!(execute_attempt(&plan, "wrong", None).is_err());
+        let mut value: serde_json::Value = read_json(&plan.environment).unwrap();
+        value["execution"]["allow_execution"] = false.into();
+        fs::write(&plan.environment, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(execute_attempt(&plan, &plan.digest, None).is_err());
+    }
+
+    #[test]
+    fn failed_report_retention_preserves_known_command_completion() {
+        let (directory, initial) = fixture("exit 0");
+        let log_dir = directory.path().join("logs");
+        fs::write(
+            directory.path().join("driver"),
+            format!("#!/bin/sh\n: > '{}/execution.json'\nexit 0\n", log_dir.display()),
+        )
+        .unwrap();
+        let environment = Environment::load(&initial.environment).unwrap();
+        let updated = plan(&environment, &initial.manifest, "test", Operation::Apply).unwrap();
+        let attempt = execute_attempt(&updated, &updated.digest, Some(&log_dir)).unwrap();
+        assert_eq!(attempt.completion, Completion::Succeeded);
+        assert_eq!(attempt.report.completed_steps, 1);
+        assert!(attempt.reporting_error.is_some());
+        assert!(attempt.error.is_none());
+        fs::remove_dir_all(&log_dir).unwrap();
+        assert!(execute_with_logs(&updated, &updated.digest, Some(&log_dir)).is_err());
+    }
 }
