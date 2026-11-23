@@ -127,6 +127,10 @@ See [failure and logging semantics](execution.md).
 
 ## Verified memory procedure
 
+`operation plan` dispatches schema1 to its unchanged recipe plan and schema2 to
+the fixed verified procedure. The plan's document type determines which CLI
+executor to use; operation discovery never dispatches changes.
+
 ```text
 cmdmesh procedure describe
 cmdmesh --config FILE procedure plan --inspector ID --input FILE --state-directory DIR --out FILE

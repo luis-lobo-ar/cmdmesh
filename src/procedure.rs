@@ -6,6 +6,8 @@ use crate::{
     digest, file_digest, recipe, version, write_private_json,
 };
 use anyhow::{bail, Context, Result};
+pub(crate) use fixed::plan_bound;
+pub use fixed::OperationSource;
 pub use fixed::{describe, execute, plan, status, CommandCompletion, CommandFacts, Outcome, Plan, Report};
 pub use journal::{Intent, Journal, SubjectGuard};
 use serde::{Deserialize, Serialize};

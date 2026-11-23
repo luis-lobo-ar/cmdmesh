@@ -352,9 +352,9 @@ async fn run(cli: Cli) -> Result<()> {
                 out,
             } => {
                 let environment = load_environment(cli.config)?;
-                let plan = operations::plan(&environment, &catalog, &operation, &read_json(&inputs)?)?;
+                let plan = operations::prepare(&environment, &catalog, &operation, &read_json(&inputs)?)?;
                 write_private_json(&out, &plan)?;
-                print_json(&serde_json::json!({"digest":plan.digest,"out":out,"warning":plan.warning}))?;
+                print_json(&serde_json::json!({"digest":plan.digest(),"out":out,"warning":plan.warning()}))?;
             }
         },
         Command::Mcp => cmdmesh::mcp::serve(cli.config).await?,

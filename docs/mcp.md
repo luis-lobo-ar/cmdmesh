@@ -60,14 +60,17 @@ it does not execute the apply. There is no `execute`, `approve`, or `out` argume
 on this MCP tool. It returns a plan rather than writing a plan file. The CLI's
 `recipe plan --out` is the usual way to create the private file for execution.
 
-`cmdmesh_operation` groups four local actions over the same implementation as
+`cmdmesh_operation` groups four actions over the same implementation as
 the CLI. `list` accepts only `catalog`, optional `query`, `offset` and `limit`.
 `inspect` takes `catalog` and `operation` (canonical ID or alias).
 `validate-inputs` and `plan` additionally require `inputs`, a private JSON file
 path. They do not accept query/pagination fields. Validation without an environment
 returns `configuration-required`; planning requires the server environment.
-The tool never echoes private input values or runs prerequisite checks. Planning
-returns an existing schema-1 recipe plan, not a file or completed execution.
+Validation does not echo private values or run prerequisite checks. Schema1
+planning returns the existing recipe plan. Schema2 planning runs the fixed
+profile's read-only qualification, retaining private context/plan.json and returning
+the bound procedure plan. The grouped operation tool therefore has the same
+local-write/remote-read hints as procedure planning; discovery remains local.
 There is no `execute`, `approve` or output-path argument. See [operation discovery](operations.md).
 
 `cmdmesh_inspection` discovers finite integration actions with `describe`. For

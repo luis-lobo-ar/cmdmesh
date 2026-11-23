@@ -706,7 +706,8 @@ fn real_stdio_mcp_handshake_lists_no_execution_and_calls_shared_drift() {
     assert!(names.iter().all(|name| name.starts_with("cmdmesh_")));
     assert!(!names.iter().any(|n| n.contains("execute")));
     for tool in tools["result"]["tools"].as_array().unwrap() {
-        let writes_private_context = tool["name"] == "cmdmesh_procedure";
+        let writes_private_context =
+            tool["name"] == "cmdmesh_procedure" || tool["name"] == "cmdmesh_operation";
         assert_eq!(tool["annotations"]["readOnlyHint"], !writes_private_context);
         assert_eq!(tool["annotations"]["destructiveHint"], false);
         assert_eq!(tool["annotations"]["idempotentHint"], !writes_private_context);

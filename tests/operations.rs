@@ -327,3 +327,84 @@ fn mcp_operation_discovery_matches_cli_and_rejects_mutation_fields() {
     assert_eq!(observed, Some(expected), "{response}");
     assert!(rejected["error"].is_object() || rejected["result"]["isError"] == true);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn metadata_changed_during_recipe_tree_capture_cannot_return_an_old_apply_plan() {
+    use std::{ffi::CString, mem, time::Instant};
+    let dir = temporary();
+    fixture(dir.path());
+    let source = dir.path().join("recipes/local/operation.json");
+    let mut initial = document();
+    initial["entrypoint"]["operation"] = json!("apply");
+    fs::write(&source, initial.to_string()).unwrap();
+    // Keep capture in progress while the observer reacts to the second manifest open.
+    fs::write(
+        dir.path().join("recipes/local/playbook.yml"),
+        "# synthetic capture workload\n".repeat(300_000),
+    )
+    .unwrap();
+    fs::write(dir.path().join("inventory.ini"), "literal\n").unwrap();
+    let config = dir.path().join("environment.json");
+    fs::write(&config,json!({"schema_version":1,"targets":{"test":{"inventory":"inventory.ini","limit":"literal","lifecycle_owner":"ansible"}},"execution":{"ansible_executable":"/usr/bin/true"}}).to_string()).unwrap();
+    let manifest = CString::new(dir.path().join("recipes/local/recipe.json").to_str().unwrap()).unwrap();
+    let descriptor = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
+    assert!(descriptor >= 0);
+    assert!(
+        unsafe {
+            libc::inotify_add_watch(
+                descriptor,
+                manifest.as_ptr(),
+                libc::IN_OPEN | libc::IN_CLOSE_NOWRITE,
+            )
+        } >= 0
+    );
+    let watcher = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut opened = 0;
+        let mut bytes = [0u8; 4096];
+        let mut changed = false;
+        while Instant::now() < deadline && !changed {
+            let mut poll = libc::pollfd {
+                fd: descriptor,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            if unsafe { libc::poll(&mut poll, 1, 100) } <= 0 {
+                continue;
+            }
+            let count = unsafe { libc::read(descriptor, bytes.as_mut_ptr().cast(), bytes.len()) };
+            if count <= 0 {
+                continue;
+            }
+            let mut offset = 0;
+            while offset + mem::size_of::<libc::inotify_event>() <= count as usize {
+                let event = unsafe {
+                    std::ptr::read_unaligned(bytes.as_ptr().add(offset).cast::<libc::inotify_event>())
+                };
+                offset += mem::size_of::<libc::inotify_event>() + event.len as usize;
+                if event.mask & libc::IN_OPEN != 0 {
+                    opened += 1;
+                }
+                if opened >= 2 {
+                    initial["entrypoint"]["operation"] = json!("check");
+                    fs::write(&source, initial.to_string()).unwrap();
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        unsafe { libc::close(descriptor) };
+        changed
+    });
+    let environment = Environment::load(&config).unwrap();
+    let planned = operations::plan(&environment, dir.path(), "local-check", &json!({"target":"test"}));
+    assert!(
+        watcher.join().unwrap(),
+        "fixture did not change metadata during capture"
+    );
+    assert!(
+        planned.is_err(),
+        "returned an old Apply plan while binding new Check metadata"
+    );
+}

@@ -121,6 +121,8 @@ MCP exposes describe/plan/status through `cmdmesh_procedure`, with no execute
 action. Planning writes private artifacts and reads remote state, reflected in
 its hints. See [the MCP guide](mcp.md).
 
-Catalog composition, real disposable growth and independent restore,
+Schema2 operation planning can dispatch this profile and bind its exact selected
+metadata; see [operation discovery](operations.md). Public catalog delivery,
+real disposable growth and independent restore,
 fresh-operator evaluation and private adoption remain separate work. Local
 fixtures do not complete those milestones.

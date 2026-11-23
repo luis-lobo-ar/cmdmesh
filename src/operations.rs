@@ -1,5 +1,5 @@
 //! Discover known operations without executing instructions from metadata.
-use crate::{config::Environment, identifier, read_json, recipe, version};
+use crate::{config::Environment, digest, file_digest, identifier, procedure, read_regular_file, recipe};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,6 +27,8 @@ pub struct Operation {
     pub provenance: Provenance,
     #[serde(skip)]
     path: PathBuf,
+    #[serde(skip)]
+    source_sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -42,6 +44,11 @@ pub struct Parameter {
 #[serde(rename_all = "kebab-case")]
 pub enum ParameterType {
     Target,
+    Inspector,
+    StateDirectory,
+    MemoryRequest,
+    MemoryMb,
+    MemoryCapacityPolicy,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -59,6 +66,29 @@ pub enum EntryPoint {
         manifest: PathBuf,
         operation: recipe::Operation,
     },
+    ProcedurePlan {
+        profile: String,
+        profile_version: u32,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum PreparedPlan {
+    Recipe(Box<recipe::Plan>),
+    Procedure(Box<procedure::Plan>),
+}
+
+impl PreparedPlan {
+    pub fn digest(&self) -> &str {
+        match self {
+            Self::Recipe(plan) => &plan.digest,
+            Self::Procedure(plan) => &plan.digest,
+        }
+    }
+    pub fn warning(&self) -> &str {
+        match self {Self::Recipe(plan)=>&plan.warning,Self::Procedure(_)=>"Bound verified procedure plan; review its exact subject, inputs and digest. A consumed plan cannot be replayed."}
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -136,11 +166,14 @@ fn lookup(value: &str) -> Result<String> {
 }
 
 fn load(path: &Path) -> Result<Operation> {
-    let mut operation: Operation = read_json(path).context("invalid operation document")?;
+    let bytes = read_regular_file(path)?;
+    let mut operation: Operation = serde_json::from_slice(&bytes).context("invalid operation document")?;
     if operation.document_type != "cmdmesh.operation" {
         bail!("unsupported operation document_type");
     }
-    version(operation.schema_version)?;
+    if !(1..=2).contains(&operation.schema_version) {
+        bail!("unsupported operation schema_version");
+    }
     if operation.operation_version != 1 {
         bail!("unsupported operation_version; expected 1");
     }
@@ -153,14 +186,37 @@ fn load(path: &Path) -> Result<Operation> {
     for alias in &operation.aliases {
         lookup(alias)?;
     }
-    if operation.parameters.len() != 1 || !operation.parameters.contains_key("target") {
-        bail!("recipe-plan requires exactly the typed target parameter");
+    let expected = match &operation.entrypoint {
+        EntryPoint::RecipePlan { .. } if operation.schema_version == 1 => {
+            vec![("target", ParameterType::Target)]
+        }
+        EntryPoint::ProcedurePlan {
+            profile,
+            profile_version,
+        } if operation.schema_version == 2 && profile == "proxmox-lxc-memory" && *profile_version == 1 => {
+            vec![
+                ("inspector", ParameterType::Inspector),
+                ("state_directory", ParameterType::StateDirectory),
+                ("request", ParameterType::MemoryRequest),
+                ("desired_memory_mb", ParameterType::MemoryMb),
+                ("capacity_policy", ParameterType::MemoryCapacityPolicy),
+            ]
+        }
+        _ => bail!("unsupported operation schema/entrypoint/profile combination"),
+    };
+    if operation.parameters.len() != expected.len() {
+        bail!("entrypoint requires its exact typed private parameters");
     }
-    let target = &operation.parameters["target"];
-    if !target.required || target.kind != ParameterType::Target {
-        bail!("recipe-plan requires a mandatory private target reference");
+    for (name, kind) in expected {
+        let parameter = operation
+            .parameters
+            .get(name)
+            .context("entrypoint parameter is missing")?;
+        if !parameter.required || parameter.kind != kind {
+            bail!("entrypoint requires mandatory correctly typed private parameters");
+        }
+        text(&parameter.description)?;
     }
-    text(&target.description)?;
     if operation.requirements.is_empty() || operation.requirements.len() > 100 {
         bail!("operation requires explicit capabilities");
     }
@@ -181,8 +237,12 @@ fn load(path: &Path) -> Result<Operation> {
             texts(versions)?;
         }
     }
-    if !capabilities.contains(&"ansible-recipe".to_owned()) {
-        bail!("recipe-plan requires the ansible-recipe capability");
+    let required = match operation.entrypoint {
+        EntryPoint::RecipePlan { .. } => "ansible-recipe",
+        EntryPoint::ProcedurePlan { .. } => "verified-procedure",
+    };
+    if !capabilities.contains(&required.to_owned()) {
+        bail!("entrypoint requires its declared execution capability");
     }
     texts(&operation.expected_results)?;
     if operation.known_failures.is_empty() || operation.known_failures.len() > 100 {
@@ -202,15 +262,17 @@ fn load(path: &Path) -> Result<Operation> {
     text(&operation.provenance.qualification)?;
     texts(&operation.provenance.limitations)?;
     operation.path = path.canonicalize()?;
-    let EntryPoint::RecipePlan { manifest, .. } = &operation.entrypoint;
+    operation.source_sha256 = digest(&bytes);
     // Colocation makes the existing recipe tree digest bind these instructions.
-    if manifest != Path::new("recipe.json") {
-        bail!("recipe-plan manifest must be the colocated recipe.json");
-    }
-    let root = operation.path.parent().unwrap();
-    let recipe = recipe::inspect(&recipe::confined_file(root, manifest)?)?;
-    if recipe.status != recipe::Status::Ready {
-        bail!("operation entrypoint recipe is not ready");
+    if let EntryPoint::RecipePlan { manifest, .. } = &operation.entrypoint {
+        if manifest != Path::new("recipe.json") {
+            bail!("recipe-plan manifest must be the colocated recipe.json");
+        }
+        let root = operation.path.parent().unwrap();
+        let recipe = recipe::inspect(&recipe::confined_file(root, manifest)?)?;
+        if recipe.status != recipe::Status::Ready {
+            bail!("operation entrypoint recipe is not ready");
+        }
     }
     Ok(operation)
 }
@@ -334,18 +396,53 @@ pub fn validate_inputs(
         if values.keys().any(|key| !entry.parameters.contains_key(key)) {
             issue("unknown-input", None);
         }
-        match values.get("target") {
-            None => issue("missing-input", Some("target")),
-            Some(value) => match value.as_str() {
-                None => issue("invalid-input-type", Some("target")),
-                Some(target) => match environment {
-                    None => issue("configuration-required", Some("target")),
-                    Some(environment) if !environment.targets.contains_key(target) => {
-                        issue("unknown-target", Some("target"))
-                    }
-                    Some(_) => (),
+        if matches!(entry.entrypoint, EntryPoint::RecipePlan { .. }) {
+            match values.get("target") {
+                None => issue("missing-input", Some("target")),
+                Some(value) => match value.as_str() {
+                    None => issue("invalid-input-type", Some("target")),
+                    Some(target) => match environment {
+                        None => issue("configuration-required", Some("target")),
+                        Some(environment) if !environment.targets.contains_key(target) => {
+                            issue("unknown-target", Some("target"))
+                        }
+                        Some(_) => (),
+                    },
                 },
-            },
+            }
+        } else {
+            for name in [
+                "inspector",
+                "state_directory",
+                "request",
+                "desired_memory_mb",
+                "capacity_policy",
+            ] {
+                let Some(value) = values.get(name) else {
+                    issue("missing-input", Some(name));
+                    continue;
+                };
+                let valid = match name {
+                    "inspector" | "state_directory" => value
+                        .as_str()
+                        .is_some_and(|text| !text.is_empty() && !text.chars().any(char::is_control)),
+                    "desired_memory_mb" => value.as_u64().is_some_and(|n| (16..=2147483647).contains(&n)),
+                    _ => value.is_object(),
+                };
+                if !valid {
+                    issue("invalid-input-type", Some(name));
+                    continue;
+                }
+                if name == "inspector" {
+                    match environment {
+                        None => issue("configuration-required", Some(name)),
+                        Some(env) if !env.providers.contains_key(value.as_str().unwrap()) => {
+                            issue("unknown-inspector", Some(name))
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
     } else {
         issue("invalid-input-document", None);
@@ -364,11 +461,57 @@ pub fn plan(environment: &Environment, root: &Path, selector: &str, values: &Val
     if !validate_inputs(&entry, values, Some(environment))?.valid {
         bail!("invalid operation inputs; use operation validate-inputs for diagnostic codes");
     }
-    let EntryPoint::RecipePlan { manifest, operation } = entry.entrypoint;
-    recipe::plan(
+    plan_recipe(environment, &entry, values)
+}
+
+fn plan_recipe(environment: &Environment, entry: &Operation, values: &Value) -> Result<recipe::Plan> {
+    if file_digest(&entry.path)? != entry.source_sha256 {
+        bail!("operation metadata changed before planning");
+    }
+    let EntryPoint::RecipePlan { manifest, operation } = &entry.entrypoint else {
+        bail!("use operation prepare for verified procedure planning");
+    };
+    let planned = recipe::plan(
         environment,
         &entry.path.parent().unwrap().join(manifest),
         values["target"].as_str().unwrap(),
-        operation,
-    )
+        operation.clone(),
+    )?;
+    recipe::verify_recipe_member(&planned, &entry.path, &entry.source_sha256)?;
+    if file_digest(&entry.path)? != entry.source_sha256 {
+        bail!("operation metadata changed during recipe capture; prepare a new plan");
+    }
+    Ok(planned)
+}
+
+pub fn prepare(
+    environment: &Environment,
+    root: &Path,
+    selector: &str,
+    values: &Value,
+) -> Result<PreparedPlan> {
+    let entry = inspect(root, selector)?;
+    if !validate_inputs(&entry, values, Some(environment))?.valid {
+        bail!("invalid operation inputs; use operation validate-inputs for diagnostic codes");
+    }
+    match &entry.entrypoint {
+        EntryPoint::RecipePlan { .. } => Ok(PreparedPlan::Recipe(Box::new(plan_recipe(
+            environment,
+            &entry,
+            values,
+        )?))),
+        EntryPoint::ProcedurePlan { .. } => Ok(PreparedPlan::Procedure(Box::new(procedure::plan_bound(
+            environment,
+            values["inspector"].as_str().unwrap(),
+            serde_json::json!({"request":values["request"],"desired_memory_mb":values["desired_memory_mb"],"capacity_policy":values["capacity_policy"]}),
+            Path::new(values["state_directory"].as_str().unwrap()),
+            Some(procedure::OperationSource {
+                id: entry.id,
+                document: procedure::Reference {
+                    path: entry.path,
+                    sha256: entry.source_sha256,
+                },
+            }),
+        )?))),
+    }
 }
