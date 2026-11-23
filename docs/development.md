@@ -47,6 +47,11 @@ force an upgrade. Preserve the last working installation for rollback.
 
 ## Run verification
 
+The procedure concurrency fixture deliberately starts slowly and signals when
+postchecks begin. The test waits for that event and holds it until the competing
+plan is refused; it does not assume sub-three-second controller startup. Fixture
+deadlines contain failed tests and do not add production waiting windows.
+
 ```bash
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings

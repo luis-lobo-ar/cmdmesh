@@ -1,10 +1,12 @@
-//! Fixed memory-profile boundaries. No procedure execution surface yet.
+//! Fixed owned-memory procedure; legacy Plan1 retains command-only semantics.
+mod fixed;
 mod journal;
 use crate::{
     config::{Environment, LifecycleOwner, Target},
     digest, file_digest, recipe, version, write_private_json,
 };
 use anyhow::{bail, Context, Result};
+pub use fixed::{describe, execute, plan, status, CommandCompletion, CommandFacts, Outcome, Plan, Report};
 pub use journal::{Intent, Journal, SubjectGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -364,9 +366,14 @@ pub fn prepare_context(
     )?;
     let recipe_dir = context.join("recipe");
     fs::DirBuilder::new().mode(0o700).create(&recipe_dir)?;
+    let facts_template=format!("{{{{ {{'document_type':'cmdmesh.proxmox.lxc-memory.driver-facts','schema_version':1,'prepared_sha256':'{}','subject_key':'{}','command_outcome':cmdmesh_memory_result.command_outcome|default('unknown'),'mutation_attempted':cmdmesh_memory_result.mutation_attempted|default(true),'module_failed':cmdmesh_memory_result.failed|default(false)}} | to_json }}}}",assessment.prepared_sha256,assessment.subject_key);
     write_private_json(
         &recipe_dir.join("playbook.json"),
-        &json!([{"name":"Apply the frozen owned LXC memory intent","hosts":"cmdmesh_subject","gather_facts":false,"become":false,"tasks":[{"name":"Check identity and grow only memory","cmdmesh.proxmox.lxc_memory":{"prepared":"{{ cmdmesh_memory_prepared }}","allow_changes":"{{ cmdmesh_allow_changes | bool }}"}}]}]),
+        &json!([{"name":"Apply the frozen owned LXC memory intent","hosts":"cmdmesh_subject","gather_facts":false,"become":false,"tasks":[
+            {"name":"Check identity and grow only memory","cmdmesh.proxmox.lxc_memory":{"prepared":"{{ cmdmesh_memory_prepared }}","allow_changes":"{{ cmdmesh_allow_changes | bool }}"},"register":"cmdmesh_memory_result","ignore_errors":true},
+            {"name":"Retain bounded native command facts","ansible.builtin.copy":{"dest":context.join("driver-facts.json"),"content":facts_template,"mode":"0600","force":false},"delegate_to":"localhost","become":false,"vars":{"ansible_connection":"local","ansible_python_interpreter":"{{ ansible_playbook_python }}","ansible_remote_tmp":context.join(".generated/ansible-controller-tmp")}},
+            {"name":"Require guarded module success","ansible.builtin.assert":{"that":["not (cmdmesh_memory_result.failed | default(false))","(cmdmesh_memory_result.assessment | default('unavailable')) in ['postchecked', 'unchanged']","(cmdmesh_memory_result.command_outcome | default('unknown')) in ['succeeded', 'not-dispatched']"],"quiet":true}}
+        ]}]),
     )?;
     write_private_json(
         &recipe_dir.join("recovery.json"),

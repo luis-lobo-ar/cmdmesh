@@ -115,12 +115,12 @@ credentials, or a private parent project to try them.
 
 | Component | What it provides |
 | --- | --- |
-| **This repository** | Rust CLI, read-only stdio MCP, pinned native inspection transport, JSON drift comparison, static plans, and approved Ansible execution |
-| [cmdmesh-proxmox](https://github.com/luis-lobo-ar/cmdmesh-proxmox) | GET-only API inventory, five native inspection actions, eleven Ansible operations roles, and a separate Terraform LXC module |
+| **This repository** | Rust CLI, stdio inspection/planning MCP, pinned native transport, JSON drift, static plans, approved Ansible execution and a verified owned-memory procedure |
+| [cmdmesh-proxmox](https://github.com/luis-lobo-ar/cmdmesh-proxmox) | GET-only API inventory, seven native inspection actions, eleven Ansible roles, guarded memory module and separate Terraform LXC module |
 | [cmdmesh-recipes](https://github.com/luis-lobo-ar/cmdmesh-recipes) | Reviewed procedures that combine integration roles with verification and recovery instructions |
 
-Core examples target **0.2.0**. The Proxmox collection retains **0.1.0**;
-the new native inspector reports **0.2.0** and uses a separate archive pin.
+Core source is **0.3.0**. The Proxmox collection is **0.2.1**;
+the native inspector reports **0.4.0** and uses a separate archive pin.
 Operation discovery needs a catalog revision containing `operation.json`
 sidecars. Existing schema-1 recipe commands remain compatible with older catalogs.
 CmdMesh does not download plugins during normal operations, automatically
@@ -346,8 +346,10 @@ configuration shape; adapt it to your client's format:
 }
 ```
 
-The seven tools discover known operations, run pinned native inspections, read
-inventory, compare drift, list recipes, inspect a recipe and prepare a static plan.
+The eight tools discover operations, run pinned inspections, read inventory,
+compare drift and prepare recipe/procedure plans. `cmdmesh_procedure` also reads
+historical status. Its planning writes private artifacts and reads remote state;
+the tool hints disclose those effects.
 **There is no MCP apply tool.** Inventory
 invokes your configured trusted provider. Keep tokens in the launch environment,
 not chat messages or tool arguments. See [MCP setup and tool arguments](docs/mcp.md).
@@ -359,6 +361,7 @@ not chat messages or tool arguments. See [MCP setup and tool arguments](docs/mcp
 | See the extraction process, Proxmox milestones and deployment extension | [Extraction plan and roadmap](docs/roadmap.md) |
 | Understand the work CmdMesh replaces and what you still own | [With and without CmdMesh](docs/why-cmdmesh.md) |
 | Find every CLI command, output, and exit code | [Command-line reference](docs/cli.md) |
+| Grow owned LXC memory with independent postchecks and once-only intent | [Verified memory procedure](docs/verified-procedures.md) |
 | Discover and run pinned read-only integration actions | [Native inspections](docs/inspections.md) |
 | Understand every environment field and path rule | [Configuration reference](docs/configuration.md) |
 | Write desired-state JSON and gate drift reports | [Inventory and drift](docs/drift.md) |

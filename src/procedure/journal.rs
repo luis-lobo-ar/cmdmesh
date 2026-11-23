@@ -35,7 +35,7 @@ pub struct Intent {
     pub consumed_at_unix_ms: u64,
 }
 
-fn private_directory(path: &Path) -> Result<()> {
+pub(super) fn private_directory(path: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_dir()
         || metadata.file_type().is_symlink()
