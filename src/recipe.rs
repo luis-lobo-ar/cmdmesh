@@ -434,7 +434,7 @@ fn create_log_file(path: &Path) -> Result<fs::File> {
         .context("cannot create private step log")
 }
 
-fn resolve_ansible(environment: &Environment) -> Result<PathBuf> {
+pub(crate) fn resolve_ansible(environment: &Environment) -> Result<PathBuf> {
     if let Some(path) = &environment.execution.ansible_executable {
         return environment
             .resolve(path)

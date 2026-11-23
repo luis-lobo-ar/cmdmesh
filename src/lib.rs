@@ -4,6 +4,7 @@ pub mod inspection;
 pub mod inventory;
 pub mod mcp;
 pub mod operations;
+pub mod procedure;
 mod process;
 pub mod recipe;
 
