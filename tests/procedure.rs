@@ -717,6 +717,206 @@ fn physical_subject_lock_remains_held_through_independent_postchecks() {
     );
 }
 
+fn operation_fixture(
+    root: &Path,
+    parameters: Value,
+    state: &Path,
+) -> (std::path::PathBuf, Value, std::path::PathBuf) {
+    let catalog = root.join("catalog");
+    let directory = catalog.join("operations/owned-lxc-memory");
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("operation.json");
+    let mut fields = serde_json::Map::new();
+    for (name, kind) in [
+        ("inspector", "inspector"),
+        ("state_directory", "state-directory"),
+        ("request", "memory-request"),
+        ("desired_memory_mb", "memory-mb"),
+        ("capacity_policy", "memory-capacity-policy"),
+    ] {
+        fields.insert(
+            name.into(),
+            json!({"type":kind,"required":true,"description":"Explicit private profile input"}),
+        );
+    }
+    save(
+        &path,
+        &json!({"document_type":"cmdmesh.operation","schema_version":2,"operation_version":1,"id":"owned-lxc-memory","aliases":["grow owned LXC memory"],"title":"Owned memory growth","summary":"Verify one fixed guarded memory change","parameters":fields,"requirements":[{"capability":"verified-procedure","protocol_version":1,"supported_tools":{"cmdmesh":["0.3.0"]}}],"entrypoint":{"driver":"procedure-plan","profile":"proxmox-lxc-memory","profile_version":1},"expected_results":["Independent memory postconditions"],"known_failures":[{"code":"uncertain","summary":"Completion is unknown","next_checks":["Inspect phase receipts"],"recovery":["Reconcile without replay"]}],"provenance":{"references":["https://example.invalid/qualified-profile"],"qualification":"Synthetic composition test only","limitations":["No real infrastructure qualification"]}}),
+    );
+    let mut values = parameters;
+    values["inspector"] = json!("native");
+    values["state_directory"] = json!(state);
+    (catalog, values, path)
+}
+
+#[test]
+fn operation_discovery_prepares_the_fixed_procedure_and_binds_exact_metadata() {
+    use cmdmesh::operations;
+    let (dir, environment, parameters, state) = executor_fixture("success");
+    let (catalog, values, path) = operation_fixture(dir.path(), parameters, &state);
+    let entry = operations::inspect(&catalog, "grow owned LXC memory").unwrap();
+    assert_eq!(entry.schema_version, 2);
+    let validation = operations::validate_inputs(&entry, &values, Some(&environment)).unwrap();
+    assert!(validation.valid);
+    assert!(!validation.requirements_evaluated);
+    assert!(!dir.path().join("calls").exists());
+    let prepared = operations::prepare(&environment, &catalog, "owned-lxc-memory", &values).unwrap();
+    let operations::PreparedPlan::Procedure(plan) = prepared else {
+        panic!("expected fixed procedure plan")
+    };
+    let source = plan.operation_source.as_ref().unwrap();
+    assert_eq!(source.id, "owned-lxc-memory");
+    assert_eq!(source.document.path, path.canonicalize().unwrap());
+    fs::write(&path, b"changed after review").unwrap();
+    assert!(procedure::execute(&plan, &plan.digest).is_err());
+    assert!(!dir.path().join("dispatch-count").exists());
+}
+
+#[test]
+fn operation_profile_rejects_unknown_inputs_versions_and_drivers_without_running_code() {
+    use cmdmesh::operations;
+    let (dir, environment, parameters, state) = executor_fixture("success");
+    let (catalog, values, path) = operation_fixture(dir.path(), parameters, &state);
+    let entry = operations::inspect(&catalog, "owned-lxc-memory").unwrap();
+    for mode in ["extra", "inspector", "memory", "state"] {
+        let mut invalid = values.clone();
+        match mode {
+            "extra" => invalid["execute"] = json!(true),
+            "inspector" => invalid["inspector"] = json!("missing"),
+            "memory" => invalid["desired_memory_mb"] = json!(true),
+            _ => invalid["state_directory"] = json!(false),
+        };
+        assert!(
+            !operations::validate_inputs(&entry, &invalid, Some(&environment))
+                .unwrap()
+                .valid,
+            "{mode}"
+        );
+    }
+    let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    for mode in ["schema", "profile", "driver", "parameter"] {
+        let mut invalid = original.clone();
+        match mode {
+            "schema" => invalid["schema_version"] = json!(1),
+            "profile" => invalid["entrypoint"]["profile_version"] = json!(2),
+            "driver" => invalid["entrypoint"]["driver"] = json!("shell"),
+            _ => {
+                invalid["parameters"]["target"] =
+                    json!({"type":"target","required":true,"description":"Unexpected"})
+            }
+        };
+        save(&path, &invalid);
+        assert!(
+            operations::inspect(&catalog, "owned-lxc-memory").is_err(),
+            "{mode}"
+        );
+    }
+    assert!(!dir.path().join("calls").exists());
+}
+
+#[test]
+fn cli_operation_plans_a_real_bound_procedure_instead_of_a_legacy_recipe() {
+    let (dir, environment, parameters, state) = executor_fixture("success");
+    let (catalog, values, _) = operation_fixture(dir.path(), parameters, &state);
+    let input = dir.path().join("operation-inputs.json");
+    save(&input, &values);
+    let out = dir.path().join("operation-plan.json");
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+        .arg("--config")
+        .arg(&environment.path)
+        .args(["operation", "plan", "grow owned LXC memory", "--catalog"])
+        .arg(&catalog)
+        .arg("--inputs")
+        .arg(&input)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let plan: Value = serde_json::from_slice(&fs::read(&out).unwrap()).unwrap();
+    assert_eq!(plan["document_type"], "cmdmesh.procedure.plan");
+    assert_eq!(plan["operation_source"]["id"], "owned-lxc-memory");
+    let execution = std::process::Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+        .args(["procedure", "execute", "--plan"])
+        .arg(&out)
+        .arg("--approve-digest")
+        .arg(plan["digest"].as_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "{}",
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&execution.stdout).unwrap()["outcome"],
+        "verified"
+    );
+}
+
+#[test]
+fn mcp_operation_plan_dispatches_the_profile_with_its_original_private_parameters() {
+    use std::{
+        io::{BufRead, BufReader, Write},
+        process::{Command, Stdio},
+        sync::mpsc,
+        thread,
+        time::Duration,
+    };
+    let (dir, environment, parameters, state) = executor_fixture("success");
+    let (catalog, values, _) = operation_fixture(dir.path(), parameters, &state);
+    let input = dir.path().join("operation-inputs.json");
+    save(&input, &values);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_cmdmesh"))
+        .arg("--config")
+        .arg(&environment.path)
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if tx.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    let mut request = |value: Value| {
+        writeln!(stdin, "{value}").unwrap();
+        stdin.flush().unwrap();
+    };
+    let receive =
+        || serde_json::from_str::<Value>(&rx.recv_timeout(Duration::from_secs(20)).unwrap()).unwrap();
+    request(
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"operation-profile-test","version":"1"}}}),
+    );
+    receive();
+    request(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
+    request(
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cmdmesh_operation","arguments":{"action":"plan","catalog":catalog,"operation":"owned-lxc-memory","inputs":input}}}),
+    );
+    let response = receive();
+    let result = response["result"]["content"][0]["text"]
+        .as_str()
+        .and_then(|s| serde_json::from_str::<Value>(s).ok());
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let plan = result.unwrap_or_else(|| panic!("{response}"));
+    assert_eq!(plan["document_type"], "cmdmesh.procedure.plan");
+    assert_eq!(plan["operation_source"]["id"], "owned-lxc-memory");
+    assert_eq!(plan["assessment"]["prepared"]["desired_memory_mb"], 512);
+    assert!(!dir.path().join("dispatch-count").exists());
+}
+
 #[test]
 fn mcp_procedure_prepares_the_same_cli_consumable_plan_but_has_no_execute_action() {
     use std::{

@@ -111,11 +111,11 @@ pub struct RecipePlan {
 
 #[mcp_tool(
     name = "cmdmesh_operation",
-    description = "Find a known task before reconstructing commands. action=list searches a local catalog (query, offset, limit); inspect returns typed inputs, prerequisites, entrypoint, failures and recovery for operation; validate-inputs checks an inputs JSON file without echoing values; plan prepares the existing static recipe plan. No execution or infrastructure mutation; requirements are declared, not automatically certified. No sessions or cleanup.",
-    read_only_hint = true,
+    description = "Find a known task before reconstructing commands. action=list searches a local catalog (query, offset, limit); inspect returns typed inputs, prerequisites, entrypoint, failures and recovery; validate-inputs checks a private JSON file without echoing values or contacting infrastructure. plan dispatches the declared supported entrypoint: schema1 returns the existing static recipe plan; schema2 prepares the fixed verified memory profile, reading current remote state and writing private frozen context. No execution/apply action. Declared requirements are not automatically certified; inspect results and diagnostics. No sessions or cleanup.",
+    read_only_hint = false,
     destructive_hint = false,
-    idempotent_hint = true,
-    open_world_hint = false
+    idempotent_hint = false,
+    open_world_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -302,7 +302,7 @@ impl Handler {
                                 configured.as_ref(),
                             )?)?
                         }
-                        OperationAction::Plan => serde_json::to_value(operations::plan(
+                        OperationAction::Plan => serde_json::to_value(operations::prepare(
                             &environment()?,
                             &catalog,
                             &operation,

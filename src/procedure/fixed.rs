@@ -32,6 +32,15 @@ pub struct Plan {
     pub assessment: Assessment,
     pub bindings: Vec<Reference>,
     pub inner_plan: recipe::Plan,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_source: Option<OperationSource>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationSource {
+    pub id: String,
+    pub document: Reference,
 }
 
 #[derive(Deserialize)]
@@ -238,7 +247,23 @@ pub fn plan(
     input: Value,
     state_directory: &Path,
 ) -> Result<Plan> {
+    plan_bound(environment, inspector, input, state_directory, None)
+}
+
+pub(crate) fn plan_bound(
+    environment: &Environment,
+    inspector: &str,
+    input: Value,
+    state_directory: &Path,
+    operation_source: Option<OperationSource>,
+) -> Result<Plan> {
     identifier(inspector)?;
+    if let Some(source) = &operation_source {
+        identifier(&source.id)?;
+        if file_digest(&source.document.path)? != source.document.sha256 {
+            bail!("operation metadata changed before preparation");
+        }
+    }
     let parameters: Parameters =
         serde_json::from_value(input).context("invalid memory procedure parameters")?;
     if !parameters.request.is_object()
@@ -328,6 +353,9 @@ pub fn plan(
         binding(&context.join("prepare.json"))?,
     ];
     bindings.extend(assessment.references.values().cloned());
+    if let Some(source) = &operation_source {
+        bindings.push(source.document.clone());
+    }
     let package = environment
         .resolve(&environment.packages["cmdmesh-proxmox"])
         .canonicalize()?;
@@ -359,6 +387,7 @@ pub fn plan(
         assessment,
         bindings,
         inner_plan,
+        operation_source,
     };
     plan.digest = plan_digest(&plan)?;
     persist(&context.join("plan.json"), &plan)?;

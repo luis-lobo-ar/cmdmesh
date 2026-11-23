@@ -350,6 +350,8 @@ The eight tools discover operations, run pinned inspections, read inventory,
 compare drift and prepare recipe/procedure plans. `cmdmesh_procedure` also reads
 historical status. Its planning writes private artifacts and reads remote state;
 the tool hints disclose those effects.
+`cmdmesh_operation` can also prepare that profile from a schema2 catalog entry,
+binding the selected operation document into the reviewed plan.
 **There is no MCP apply tool.** Inventory
 invokes your configured trusted provider. Keep tokens in the launch environment,
 not chat messages or tool arguments. See [MCP setup and tool arguments](docs/mcp.md).

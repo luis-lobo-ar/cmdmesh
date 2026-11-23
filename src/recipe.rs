@@ -483,6 +483,31 @@ fn bind_tree(root: &Path) -> Result<BoundInput> {
         directory: true,
     })
 }
+
+pub(crate) fn verify_recipe_member(plan: &Plan, path: &Path, expected_sha256: &str) -> Result<()> {
+    let root = plan.manifest.parent().context("recipe manifest has no parent")?;
+    let bound = plan
+        .inputs
+        .iter()
+        .find(|input| input.directory && input.path == root)
+        .context("recipe tree binding missing")?;
+    let mut members = BTreeMap::new();
+    collect_tree(root, root, &mut members)?;
+    let relative = path
+        .strip_prefix(root)?
+        .to_str()
+        .context("metadata path is not UTF-8")?;
+    if !members.contains_key(relative) {
+        bail!("loaded metadata is outside the bound recipe tree");
+    }
+    // Compare against the captured tree, not only today's file: restoration
+    // after an intervening change must not disguise different bound metadata.
+    members.insert(relative.to_owned(), expected_sha256.to_owned());
+    if digest(&serde_json::to_vec(&members)?) != bound.sha256 {
+        bail!("captured recipe tree does not bind the loaded operation metadata");
+    }
+    Ok(())
+}
 fn collect_tree(root: &Path, directory: &Path, entries: &mut BTreeMap<String, String>) -> Result<()> {
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
@@ -633,5 +658,21 @@ mod completion_tests {
         assert!(attempt.error.is_none());
         fs::remove_dir_all(&log_dir).unwrap();
         assert!(execute_with_logs(&updated, &updated.digest, Some(&log_dir)).is_err());
+    }
+
+    #[test]
+    fn bound_metadata_must_be_the_loaded_bytes_even_if_the_file_is_restored() {
+        let (directory, initial) = fixture("exit 0");
+        let metadata = directory.path().join("recipe/operation.json");
+        let loaded = b"{\"operation\":\"apply\"}";
+        fs::write(&metadata, loaded).unwrap();
+        let expected = digest(loaded);
+        fs::write(&metadata, b"{\"operation\":\"check\"}").unwrap();
+        let environment = Environment::load(&initial.environment).unwrap();
+        let changed = plan(&environment, &initial.manifest, "test", Operation::Apply).unwrap();
+        fs::write(&metadata, loaded).unwrap();
+        assert!(verify_recipe_member(&changed, &metadata, &expected).is_err());
+        let stable = plan(&environment, &initial.manifest, "test", Operation::Apply).unwrap();
+        verify_recipe_member(&stable, &metadata, &expected).unwrap();
     }
 }
