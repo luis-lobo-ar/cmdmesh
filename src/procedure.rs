@@ -1,9 +1,11 @@
 //! Fixed memory-profile boundaries. No procedure execution surface yet.
+mod journal;
 use crate::{
     config::{Environment, LifecycleOwner, Target},
     digest, file_digest, recipe, version, write_private_json,
 };
 use anyhow::{bail, Context, Result};
+pub use journal::{Intent, Journal, SubjectGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{

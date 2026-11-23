@@ -49,6 +49,21 @@ Trusted tool runtimes and Ansible dependencies remain trusted executable code.
 
 ## Still required
 
+The experimental local journal now provides stable physical-subject file locks
+and exclusive consumed intents. The configured state root must already be an
+owned private directory. Controllers using the same directory coordinate by
+subject key, independently of display aliases; other directories or machines do
+not share that lock. Lock files are never unlinked. A terminated local lock owner
+releases its lock without making remote completion known.
+
+An intent is created only while holding its subject guard. Its bytes and parent
+directory are synced before the method returns. Any existing entry, including
+partial JSON or a dangling symlink, prevents replay. A write/sync error leaves
+the entry in place and must prevent dispatch. This requires a filesystem that
+honors file and directory sync. Operators must retain the state directory and
+provide its durable parent path; deleting state is not a recovery operation.
+These primitives are not yet wired into an executor and do not authorize changes.
+
 The bounded envelope must add approval binding, stable-subject locking, durable
 once-only intent before dispatch, fresh preflight, typed command facts,
 independent postchecks and retained phase receipts. Unknown command completion
